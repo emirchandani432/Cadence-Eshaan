@@ -2323,6 +2323,7 @@ function RoleCell({ value, onSave }) {
   const [draft, setDraft] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [sugIdx, setSugIdx] = useState(-1);
+  const [dropPos, setDropPos] = useState({ top: 0, left: 0 });
   const taRef = useRef(null);
 
   const names = String(value || "").split(/\n| and /).map(s => s.trim()).filter(Boolean);
@@ -2345,9 +2346,13 @@ function RoleCell({ value, onSave }) {
     const word = getLastWord(text);
     if (word.length >= 1) {
       const wl = word.toLowerCase();
-      const matches = ALL_NAMES.filter(n => n.toLowerCase().includes(wl)).slice(0, 6);
+      const matches = ALL_NAMES.filter(n => n.toLowerCase().includes(wl)).slice(0, 8);
       setSuggestions(matches);
       setSugIdx(-1);
+      if (taRef.current) {
+        const r = taRef.current.getBoundingClientRect();
+        setDropPos({ top: r.bottom + window.scrollY, left: r.left + window.scrollX });
+      }
     } else {
       setSuggestions([]);
     }
@@ -2387,11 +2392,11 @@ function RoleCell({ value, onSave }) {
           onKeyDown={handleKey}
           onBlur={e => { if (!e.relatedTarget?.dataset?.suggestion) { commit(draft); } }} />
         {suggestions.length > 0 && (
-          <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 100, background: "#fff", border: "1px solid #c0cad8", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,.18)", minWidth: 180, overflow: "hidden" }}>
+          <div style={{ position: "fixed", top: dropPos.top, left: dropPos.left, zIndex: 9999, background: "#fff", border: "1px solid #c0cad8", borderRadius: 8, boxShadow: "0 8px 28px rgba(0,0,0,.22)", minWidth: 220, overflow: "hidden" }}>
             {suggestions.map((s, i) => (
               <div key={s} data-suggestion="1" tabIndex={-1}
                 onMouseDown={e => { e.preventDefault(); pickSuggestion(s); }}
-                style={{ padding: "7px 12px", fontSize: 12.5, cursor: "pointer", background: i === sugIdx ? "#2563c9" : "transparent", color: i === sugIdx ? "#fff" : "#1b2330", fontFamily: "Outfit", fontWeight: 500 }}>
+                style={{ padding: "8px 14px", fontSize: 13, cursor: "pointer", background: i === sugIdx ? "#2563c9" : "transparent", color: i === sugIdx ? "#fff" : "#1b2330", fontFamily: "Outfit", fontWeight: 500 }}>
                 {s}
               </div>
             ))}
