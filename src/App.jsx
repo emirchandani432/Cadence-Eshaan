@@ -344,19 +344,11 @@ export default function App() {
   const [data, setData] = useState({ people: [], projects: [], tasks: [] });
   const [loaded, setLoaded] = useState(false);
   const [user, setUser] = useState(null);
-  const [theme, setTheme] = useState(() => { try { return localStorage.getItem("cadence:theme") || "auto"; } catch (e) { return "auto"; } });
-  const [sysLight, setSysLight] = useState(() => typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(prefers-color-scheme: light)").matches : false);
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return;
-    const mq = window.matchMedia("(prefers-color-scheme: light)");
-    const h = (e) => setSysLight(e.matches);
-    mq.addEventListener ? mq.addEventListener("change", h) : mq.addListener(h);
-    return () => { mq.removeEventListener ? mq.removeEventListener("change", h) : mq.removeListener(h); };
-  }, []);
-  const effLight = theme === "light" || (theme === "auto" && sysLight);
+  const [theme, setTheme] = useState(() => { try { return localStorage.getItem("cadence:theme") || "dark"; } catch (e) { return "dark"; } });
+  const effLight = theme === "light";
   const rootCls = "cad" + (effLight ? " light" : "");
-  const cycleTheme = () => setTheme(t => { const n = t === "auto" ? "light" : t === "light" ? "dark" : "auto"; try { localStorage.setItem("cadence:theme", n); } catch (e) {} return n; });
-  const ThemeIcon = theme === "auto" ? Monitor : theme === "light" ? Sun : Moon;
+  const cycleTheme = () => setTheme(t => { const n = t === "light" ? "dark" : "light"; try { localStorage.setItem("cadence:theme", n); } catch (e) {} return n; });
+  const ThemeIcon = effLight ? Sun : Moon;
   const [profileOpen, setProfileOpen] = useState(false);
   const updateUser = (patch) => { setUser(u => { const n = { ...u, ...patch }; saveUser(n); return n; }); };
   const [gantt, setGantt] = useState(() => loadGantt() || gSample());
