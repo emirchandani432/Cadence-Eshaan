@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head><title>Signing in…</title></head>
+<body style="font-family:sans-serif;display:grid;place-items:center;height:100vh;background:#0B1524;color:#E9EFF7;">
+  <p>Signing in to Outlook…</p>
+  <script>
+    // Parent window polls for this hash — just keep the window open briefly
+    if (window.location.hash.includes("access_token")) {
+      document.querySelector("p").textContent = "Signed in! Closing…";
+      setTimeout(() => window.close(), 800);
+    }
+  </script>
+</body>
+</html>
