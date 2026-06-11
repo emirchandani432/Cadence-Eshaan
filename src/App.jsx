@@ -2316,15 +2316,93 @@ const rowEmails = (r) => {
   }));
   return out;
 };
+const ALL_NAMES = Object.keys(EMAIL_DIR).map(k => k.replace(/\b\w/g, c => c.toUpperCase()));
+
 function RoleCell({ value, onSave }) {
   const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [suggestions, setSuggestions] = useState([]);
+  const [sugIdx, setSugIdx] = useState(-1);
+  const taRef = useRef(null);
+
   const names = String(value || "").split(/\n| and /).map(s => s.trim()).filter(Boolean);
+
+  const commit = (text) => {
+    setEditing(false);
+    setSuggestions([]);
+    onSave(text.split(/\n/).map(s => s.trim()).filter(Boolean).join("\n"));
+  };
+
+  // Get the last partial word on the last line to drive suggestions
+  const getLastWord = (text) => {
+    const lastLine = text.split("\n").pop() || "";
+    return lastLine.trim();
+  };
+
+  const handleChange = (e) => {
+    const text = e.target.value;
+    setDraft(text);
+    const word = getLastWord(text);
+    if (word.length >= 1) {
+      const wl = word.toLowerCase();
+      const matches = ALL_NAMES.filter(n => n.toLowerCase().includes(wl)).slice(0, 6);
+      setSuggestions(matches);
+      setSugIdx(-1);
+    } else {
+      setSuggestions([]);
+    }
+  };
+
+  const pickSuggestion = (name) => {
+    const lines = draft.split("\n");
+    lines[lines.length - 1] = name;
+    const next = lines.join("\n");
+    setDraft(next);
+    setSuggestions([]);
+    setSugIdx(-1);
+    taRef.current?.focus();
+  };
+
+  const handleKey = (e) => {
+    if (suggestions.length === 0) {
+      if (e.key === "Escape") commit(draft);
+      return;
+    }
+    if (e.key === "ArrowDown") { e.preventDefault(); setSugIdx(i => Math.min(i + 1, suggestions.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setSugIdx(i => Math.max(i - 1, -1)); }
+    else if ((e.key === "Enter" || e.key === "Tab") && sugIdx >= 0) {
+      e.preventDefault();
+      pickSuggestion(suggestions[sugIdx]);
+    } else if (e.key === "Escape") {
+      setSuggestions([]);
+    }
+  };
+
   if (editing) {
-    return <textarea className="trk-role-edit" autoFocus rows={Math.max(1, names.length)} defaultValue={names.join("\n")}
-      onBlur={e => { setEditing(false); onSave(e.target.value.split(/\n/).map(s => s.trim()).filter(Boolean).join("\n")); }} />;
+    return (
+      <div style={{ position: "relative" }}>
+        <textarea ref={taRef} className="trk-role-edit" autoFocus rows={Math.max(1, draft.split("\n").length)}
+          value={draft}
+          onChange={handleChange}
+          onKeyDown={handleKey}
+          onBlur={e => { if (!e.relatedTarget?.dataset?.suggestion) { commit(draft); } }} />
+        {suggestions.length > 0 && (
+          <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 100, background: "#fff", border: "1px solid #c0cad8", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,.18)", minWidth: 180, overflow: "hidden" }}>
+            {suggestions.map((s, i) => (
+              <div key={s} data-suggestion="1" tabIndex={-1}
+                onMouseDown={e => { e.preventDefault(); pickSuggestion(s); }}
+                style={{ padding: "7px 12px", fontSize: 12.5, cursor: "pointer", background: i === sugIdx ? "#2563c9" : "transparent", color: i === sugIdx ? "#fff" : "#1b2330", fontFamily: "Outfit", fontWeight: 500 }}>
+                {s}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
   }
+
   return (
-    <div className="trk-role" onDoubleClick={() => setEditing(true)} title="Double-click to edit">
+    <div className="trk-role" onDoubleClick={() => { setDraft(names.join("\n")); setEditing(true); }} title="Double-click to edit">
       {names.length === 0 ? <span style={{ color: "#b9c1cd", paddingLeft: 8 }}>—</span> :
         names.map((n, i) => { const e = trackerEmailFor(n); return <div key={i}>{e ? <a href={"mailto:" + e} onClick={ev => ev.stopPropagation()}>{n}</a> : <span>{n}</span>}</div>; })}
     </div>
