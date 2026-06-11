@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   Plus, CalendarDays, Users, LayoutGrid, Mail, Check, Trash2, Pencil,
   Download, Upload, X, ChevronLeft, ChevronRight, Search, Sparkles,
@@ -2347,12 +2348,12 @@ function RoleCell({ value, onSave }) {
     if (word.length >= 1) {
       const wl = word.toLowerCase();
       const matches = ALL_NAMES.filter(n => n.toLowerCase().includes(wl)).slice(0, 8);
-      setSuggestions(matches);
-      setSugIdx(-1);
       if (taRef.current) {
         const r = taRef.current.getBoundingClientRect();
-        setDropPos({ top: r.bottom + window.scrollY, left: r.left + window.scrollX });
+        setDropPos({ top: r.bottom, left: r.left });
       }
+      setSuggestions(matches);
+      setSugIdx(-1);
     } else {
       setSuggestions([]);
     }
@@ -2391,7 +2392,7 @@ function RoleCell({ value, onSave }) {
           onChange={handleChange}
           onKeyDown={handleKey}
           onBlur={e => { if (!e.relatedTarget?.dataset?.suggestion) { commit(draft); } }} />
-        {suggestions.length > 0 && (
+        {suggestions.length > 0 && createPortal(
           <div style={{ position: "fixed", top: dropPos.top, left: dropPos.left, zIndex: 9999, background: "#fff", border: "1px solid #c0cad8", borderRadius: 8, boxShadow: "0 8px 28px rgba(0,0,0,.22)", minWidth: 220, overflow: "hidden" }}>
             {suggestions.map((s, i) => (
               <div key={s} data-suggestion="1" tabIndex={-1}
@@ -2400,7 +2401,8 @@ function RoleCell({ value, onSave }) {
                 {s}
               </div>
             ))}
-          </div>
+          </div>,
+          document.body
         )}
       </div>
     );
