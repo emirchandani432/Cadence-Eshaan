@@ -246,6 +246,18 @@ const css = `
 /* theme-safe sign-in button */
 .ms-btn { background:var(--panel2); color:var(--ink); border:1px solid var(--line2); }
 
+/* twilight theme */
+.cad.twilight {
+  --bg:#1C1B2E; --panel:#252340; --panel2:#2E2B50; --raise:#373462;
+  --line:#423E6E; --line2:#554F8A; --ink:#E4DEFF; --muted:#9B94CC; --dim:#6B6399;
+  --primary:#E03A3E; --primary-d:#C42F33; --teal:#7B8FE8; --amber:#8B7FD4; --slate:#7B74A8; --done:#3DBD7A;
+  background:
+    radial-gradient(1100px 520px at 88% -8%, rgba(224,58,62,.10) 0%, transparent 55%),
+    radial-gradient(900px 500px at -6% 108%, rgba(123,143,232,.12) 0%, transparent 52%),
+    var(--bg);
+}
+.cad.twilight .bar { background:rgba(28,27,46,.85); }
+
 /* light theme */
 .cad.light {
   --bg:#EEF2F8; --panel:#FFFFFF; --panel2:#F6F9FD; --raise:#EDF1F8;
@@ -346,9 +358,9 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [theme, setTheme] = useState(() => { try { return localStorage.getItem("cadence:theme") || "dark"; } catch (e) { return "dark"; } });
   const effLight = theme === "light";
-  const rootCls = "cad" + (effLight ? " light" : "");
-  const cycleTheme = () => setTheme(t => { const n = t === "light" ? "dark" : "light"; try { localStorage.setItem("cadence:theme", n); } catch (e) {} return n; });
-  const ThemeIcon = effLight ? Sun : Moon;
+  const rootCls = "cad" + (theme !== "dark" ? " " + theme : "");
+  const cycleTheme = () => setTheme(t => { const n = t === "dark" ? "twilight" : t === "twilight" ? "light" : "dark"; try { localStorage.setItem("cadence:theme", n); } catch (e) {} return n; });
+  const ThemeIcon = theme === "light" ? Sun : theme === "twilight" ? Sparkles : Moon;
   const [profileOpen, setProfileOpen] = useState(false);
   const updateUser = (patch) => { setUser(u => { const n = { ...u, ...patch }; saveUser(n); return n; }); };
   const [gantt, setGantt] = useState(() => loadGantt() || gSample());
@@ -453,7 +465,7 @@ export default function App() {
     gantt, setGantt, ganttGoto, gotoGantt, clearGanttGoto: () => setGanttGoto(null),
     notif, setNotif,
     contacts, setContacts, openComposer,
-    effLight,
+    effLight, theme,
     loadSample: () => setData(SAMPLE) };
 
   const unreadCount = buildNotifs(gantt).filter(n => !notif.read.includes(n.id) && !notif.removed.includes(n.id)).length;
@@ -2312,7 +2324,7 @@ const rowEmails = (r) => {
 };
 const ALL_NAMES = Object.keys(EMAIL_DIR).map(k => k.replace(/\b\w/g, c => c.toUpperCase()));
 
-function RoleCell({ value, onSave, effLight }) {
+function RoleCell({ value, onSave, effLight, theme }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [suggestions, setSuggestions] = useState([]);
@@ -2386,11 +2398,11 @@ function RoleCell({ value, onSave, effLight }) {
           onKeyDown={handleKey}
           onBlur={e => { if (!e.relatedTarget?.dataset?.suggestion) { commit(draft); } }} />
         {suggestions.length > 0 && createPortal(
-          <div style={{ position: "fixed", top: dropPos.top, left: dropPos.left, zIndex: 9999, background: effLight ? "#fff" : "#172E4B", border: `1px solid ${effLight ? "#c0cad8" : "#26456B"}`, borderRadius: 8, boxShadow: "0 8px 28px rgba(0,0,0,.35)", minWidth: 220, overflow: "hidden" }}>
+          <div style={{ position: "fixed", top: dropPos.top, left: dropPos.left, zIndex: 9999, background: theme === "light" ? "#fff" : theme === "twilight" ? "#2E2B50" : "#172E4B", border: `1px solid ${theme === "light" ? "#c0cad8" : theme === "twilight" ? "#423E6E" : "#26456B"}`, borderRadius: 8, boxShadow: "0 8px 28px rgba(0,0,0,.35)", minWidth: 220, overflow: "hidden" }}>
             {suggestions.map((s, i) => (
               <div key={s} data-suggestion="1" tabIndex={-1}
                 onMouseDown={e => { e.preventDefault(); pickSuggestion(s); }}
-                style={{ padding: "8px 14px", fontSize: 13, cursor: "pointer", background: i === sugIdx ? "#E03A3E" : "transparent", color: i === sugIdx ? "#fff" : effLight ? "#1b2330" : "#E9EFF7", fontFamily: "Outfit", fontWeight: 500 }}>
+                style={{ padding: "8px 14px", fontSize: 13, cursor: "pointer", background: i === sugIdx ? "#E03A3E" : "transparent", color: i === sugIdx ? "#fff" : theme === "light" ? "#1b2330" : "#E4DEFF", fontFamily: "Outfit", fontWeight: 500 }}>
                 {s}
               </div>
             ))}
@@ -2430,7 +2442,7 @@ const TRACKER_COLS = [
   { key: "stage", label: "Stage", w: 170 },
 ];
 function TrackerView({ ctx }) {
-  const { effLight } = ctx;
+  const { effLight, theme } = ctx;
   const [data, setData] = useState(() => {
     const s = loadTracker();
     const rs = (s && s.rows) || SEED_TRACKER;
@@ -2630,7 +2642,7 @@ function TrackerView({ ctx }) {
                     return (
                     <td key={c.key} style={{ ...cell, width: c.w, minWidth: c.w, maxWidth: c.w, padding: 0, verticalAlign: isRole ? "top" : "middle", whiteSpace: isRole ? "normal" : "nowrap", fontWeight: c.key === "projectName" ? 600 : 400, ...(c.sticky ? { position: "sticky", left: GUT, zIndex: 1, background: "var(--panel)" } : {}) }}>
                       {isRole ? (
-                        <RoleCell value={r[c.key]} onSave={v => update(r._id, c.key, v)} effLight={effLight} />
+                        <RoleCell value={r[c.key]} onSave={v => update(r._id, c.key, v)} effLight={effLight} theme={theme} />
                       ) : c.key === "stage" ? (
                         <select className="trk-status" value={r.stage || ""} onChange={e => setStatus(r._id, e.target.value)}
                           style={{ color: r.stage ? statusColor(r.stage) : "#9aa6b6", background: r.stage ? statusColor(r.stage) + "1f" : "transparent" }}>
