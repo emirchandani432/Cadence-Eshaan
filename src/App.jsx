@@ -461,6 +461,7 @@ export default function App() {
     gantt, setGantt, ganttGoto, gotoGantt, clearGanttGoto: () => setGanttGoto(null),
     notif, setNotif,
     contacts, setContacts, openComposer,
+    effLight,
     loadSample: () => setData(SAMPLE) };
 
   const unreadCount = buildNotifs(gantt).filter(n => !notif.read.includes(n.id) && !notif.removed.includes(n.id)).length;
@@ -2319,7 +2320,7 @@ const rowEmails = (r) => {
 };
 const ALL_NAMES = Object.keys(EMAIL_DIR).map(k => k.replace(/\b\w/g, c => c.toUpperCase()));
 
-function RoleCell({ value, onSave }) {
+function RoleCell({ value, onSave, effLight }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [suggestions, setSuggestions] = useState([]);
@@ -2393,11 +2394,11 @@ function RoleCell({ value, onSave }) {
           onKeyDown={handleKey}
           onBlur={e => { if (!e.relatedTarget?.dataset?.suggestion) { commit(draft); } }} />
         {suggestions.length > 0 && createPortal(
-          <div style={{ position: "fixed", top: dropPos.top, left: dropPos.left, zIndex: 9999, background: "#fff", border: "1px solid #c0cad8", borderRadius: 8, boxShadow: "0 8px 28px rgba(0,0,0,.22)", minWidth: 220, overflow: "hidden" }}>
+          <div style={{ position: "fixed", top: dropPos.top, left: dropPos.left, zIndex: 9999, background: effLight ? "#fff" : "#172E4B", border: `1px solid ${effLight ? "#c0cad8" : "#26456B"}`, borderRadius: 8, boxShadow: "0 8px 28px rgba(0,0,0,.35)", minWidth: 220, overflow: "hidden" }}>
             {suggestions.map((s, i) => (
               <div key={s} data-suggestion="1" tabIndex={-1}
                 onMouseDown={e => { e.preventDefault(); pickSuggestion(s); }}
-                style={{ padding: "8px 14px", fontSize: 13, cursor: "pointer", background: i === sugIdx ? "#2563c9" : "transparent", color: i === sugIdx ? "#fff" : "#1b2330", fontFamily: "Outfit", fontWeight: 500 }}>
+                style={{ padding: "8px 14px", fontSize: 13, cursor: "pointer", background: i === sugIdx ? "#E03A3E" : "transparent", color: i === sugIdx ? "#fff" : effLight ? "#1b2330" : "#E9EFF7", fontFamily: "Outfit", fontWeight: 500 }}>
                 {s}
               </div>
             ))}
@@ -2437,6 +2438,7 @@ const TRACKER_COLS = [
   { key: "stage", label: "Stage", w: 170 },
 ];
 function TrackerView({ ctx }) {
+  const { effLight } = ctx;
   const [data, setData] = useState(() => {
     const s = loadTracker();
     const rs = (s && s.rows) || SEED_TRACKER;
@@ -2544,10 +2546,10 @@ function TrackerView({ ctx }) {
     window.open(`https://outlook.office.com/mail/deeplink/compose?${u.toString()}`, "_blank");
   };
   const GUT = 46;
-  const cell = { border: "1px solid #d0d7de", padding: "5px 8px", fontSize: 12.5, color: "#1b2330", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", background: "#fff" };
-  const headc = { ...cell, background: "#eef2f7", fontWeight: 700, color: "#16243a", position: "sticky", top: 0, zIndex: 3 };
-  const colBtn = { border: "none", background: "transparent", cursor: "pointer", color: "#5a6b85", fontSize: 14, fontWeight: 700, lineHeight: 1, padding: "0 1px" };
-  const actBtn = { border: "none", background: "transparent", cursor: "pointer", color: "#5a6b85", display: "inline-grid", placeItems: "center", padding: 2 };
+  const cell = { border: "1px solid var(--line)", padding: "5px 8px", fontSize: 12.5, color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", background: "var(--panel)" };
+  const headc = { ...cell, background: "var(--panel2)", fontWeight: 700, color: "var(--ink)", position: "sticky", top: 0, zIndex: 3 };
+  const colBtn = { border: "none", background: "transparent", cursor: "pointer", color: "var(--muted)", fontSize: 14, fontWeight: 700, lineHeight: 1, padding: "0 1px" };
+  const actBtn = { border: "none", background: "transparent", cursor: "pointer", color: "var(--muted)", display: "inline-grid", placeItems: "center", padding: 2 };
   return (
     <>
       <div className="head">
@@ -2594,19 +2596,19 @@ function TrackerView({ ctx }) {
             )}
           </div>
         </div>
-        <style>{`.trk-table input{width:100%;box-sizing:border-box;border:none;background:transparent;font-family:'Outfit';font-size:12.5px;color:#1b2330;padding:5px 8px;outline:none;}
-.trk-table input:focus{background:#fff7cc;box-shadow:inset 0 0 0 2px #2563c9;border-radius:2px;}
+        <style>{`.trk-table input{width:100%;box-sizing:border-box;border:none;background:transparent;font-family:'Outfit';font-size:12.5px;color:var(--ink);padding:5px 8px;outline:none;}
+.trk-table input:focus{background:var(--raise);box-shadow:inset 0 0 0 2px var(--teal);border-radius:2px;}
 .trk-table select.trk-status{width:100%;box-sizing:border-box;border:none;font-family:'Outfit';font-size:12px;font-weight:600;padding:5px 6px;outline:none;cursor:pointer;border-radius:2px;}
 .trk-gut{cursor:grab;}
 .trk-role{padding:4px 8px;line-height:1.55;cursor:default;min-height:26px;}
-.trk-role a{color:#2563c9;text-decoration:none;}
+.trk-role a{color:var(--teal);text-decoration:none;}
 .trk-role a:hover{text-decoration:underline;}
-.trk-table textarea.trk-role-edit{width:100%;box-sizing:border-box;border:none;background:#fff7cc;box-shadow:inset 0 0 0 2px #2563c9;font-family:'Outfit';font-size:12.5px;color:#1b2330;padding:4px 8px;outline:none;resize:vertical;line-height:1.55;}`}</style>
-        <div style={{ overflow: "auto", maxHeight: "84vh", border: "1px solid #d0d7de", borderRadius: 8 }}>
-          <table className="trk-table" style={{ borderCollapse: "collapse", width: "max-content", minWidth: "100%", background: "#fff" }}>
+.trk-table textarea.trk-role-edit{width:100%;box-sizing:border-box;border:none;background:var(--raise);box-shadow:inset 0 0 0 2px var(--teal);font-family:'Outfit';font-size:12.5px;color:var(--ink);padding:4px 8px;outline:none;resize:vertical;line-height:1.55;}`}</style>
+        <div style={{ overflow: "auto", maxHeight: "84vh", border: "1px solid var(--line)", borderRadius: 8 }}>
+          <table className="trk-table" style={{ borderCollapse: "collapse", width: "max-content", minWidth: "100%", background: "var(--panel)" }}>
             <thead>
               <tr>
-                <th style={{ ...headc, width: GUT, minWidth: GUT, left: 0, zIndex: 6, background: "#e3e8ef" }}></th>
+                <th style={{ ...headc, width: GUT, minWidth: GUT, left: 0, zIndex: 6, background: "var(--raise)" }}></th>
                 {visibleCols.map((c, ci) => (
                   <th key={c.key} style={{ ...headc, width: c.w, minWidth: c.w, ...(c.sticky ? { left: GUT, zIndex: 5 } : {}) }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 3, paddingRight: 6 }}>
@@ -2630,13 +2632,13 @@ function TrackerView({ ctx }) {
                   onDrop={e => { e.preventDefault(); dropOnRow(r._id); }}
                   style={{ opacity: dragId === r._id ? 0.4 : 1, boxShadow: overId === r._id && dragId && dragId !== r._id ? "inset 0 2px 0 #2563c9" : "none" }}>
                   <td className="trk-gut" draggable onDragStart={() => setDragId(r._id)} onDragEnd={() => { setDragId(null); setOverId(null); }} title="Drag to reorder"
-                    style={{ ...cell, width: GUT, minWidth: GUT, position: "sticky", left: 0, zIndex: 1, background: "#f3f5f9", color: "#6b7a92", textAlign: "center", fontSize: 11.5, fontWeight: 600, userSelect: "none" }}>{ri + 1}</td>
+                    style={{ ...cell, width: GUT, minWidth: GUT, position: "sticky", left: 0, zIndex: 1, background: "var(--panel2)", color: "var(--muted)", textAlign: "center", fontSize: 11.5, fontWeight: 600, userSelect: "none" }}>{ri + 1}</td>
                   {visibleCols.map(c => {
                     const isRole = ROLE_KEYS.includes(c.key);
                     return (
-                    <td key={c.key} style={{ ...cell, width: c.w, minWidth: c.w, maxWidth: c.w, padding: 0, verticalAlign: isRole ? "top" : "middle", whiteSpace: isRole ? "normal" : "nowrap", fontWeight: c.key === "projectName" ? 600 : 400, ...(c.sticky ? { position: "sticky", left: GUT, zIndex: 1, background: "#fff" } : {}) }}>
+                    <td key={c.key} style={{ ...cell, width: c.w, minWidth: c.w, maxWidth: c.w, padding: 0, verticalAlign: isRole ? "top" : "middle", whiteSpace: isRole ? "normal" : "nowrap", fontWeight: c.key === "projectName" ? 600 : 400, ...(c.sticky ? { position: "sticky", left: GUT, zIndex: 1, background: "var(--panel)" } : {}) }}>
                       {isRole ? (
-                        <RoleCell value={r[c.key]} onSave={v => update(r._id, c.key, v)} />
+                        <RoleCell value={r[c.key]} onSave={v => update(r._id, c.key, v)} effLight={effLight} />
                       ) : c.key === "stage" ? (
                         <select className="trk-status" value={r.stage || ""} onChange={e => setStatus(r._id, e.target.value)}
                           style={{ color: r.stage ? statusColor(r.stage) : "#9aa6b6", background: r.stage ? statusColor(r.stage) + "1f" : "transparent" }}>
