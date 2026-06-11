@@ -2436,6 +2436,10 @@ function TrackerView({ ctx }) {
     const a = ds.findIndex(r => r._id === id), b = ds.findIndex(r => r._id === tgt._id);
     const c = [...ds]; [c[a], c[b]] = [c[b], c[a]]; return c;
   });
+  const [showColSettings, setShowColSettings] = useState(false);
+  const [hiddenCols, setHiddenCols] = useState(() => { try { const v = localStorage.getItem("cadence:tracker:hidden"); return v ? JSON.parse(v) : []; } catch { return []; } });
+  const toggleCol = (key) => setHiddenCols(prev => { const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]; localStorage.setItem("cadence:tracker:hidden", JSON.stringify(next)); return next; });
+  const visibleCols = cols.filter(c => !hiddenCols.includes(c.key));
   const addCol = () => { const label = window.prompt("New column name:"); if (!label || !label.trim()) return; setCols(cs => [...cs, { key: "c_" + uid(), label: label.trim(), w: 150 }]); };
   const delCol = (key) => { if (!window.confirm("Delete this column?")) return; setCols(cs => cs.filter(c => c.key !== key)); };
   const moveCol = (key, dir) => setCols(cs => { const i = cs.findIndex(c => c.key === key); const j = i + dir; if (j < 0 || j >= cs.length) return cs; const c = [...cs]; [c[i], c[j]] = [c[j], c[i]]; return c; });
@@ -2482,6 +2486,28 @@ function TrackerView({ ctx }) {
           <div style={{ flex: 1 }} />
           <button className="btn btn-sm" onClick={addRow}><Plus size={14} />Row</button>
           <button className="btn btn-sm" onClick={addCol}><Plus size={14} />Column</button>
+          <div style={{ position: "relative" }}>
+            <button className="btn btn-sm" onClick={() => setShowColSettings(v => !v)} title="Show/hide columns" style={{ gap: 6 }}>
+              <Settings size={14} />{hiddenCols.length > 0 && <span style={{ background: "var(--primary)", color: "#fff", borderRadius: 99, fontSize: 10, fontWeight: 700, padding: "1px 5px" }}>{hiddenCols.length}</span>}Columns
+            </button>
+            {showColSettings && (
+              <div style={{ position: "absolute", right: 0, top: "calc(100% + 6px)", zIndex: 50, background: "var(--panel2)", border: "1px solid var(--line2)", borderRadius: 14, padding: "10px 12px", minWidth: 200, boxShadow: "0 16px 40px rgba(0,0,0,.45)" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--dim)", textTransform: "uppercase", letterSpacing: ".6px", marginBottom: 8 }}>Show / Hide Columns</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 320, overflowY: "auto" }}>
+                  {cols.map(c => (
+                    <label key={c.key} style={{ display: "flex", alignItems: "center", gap: 9, cursor: "pointer", padding: "5px 6px", borderRadius: 8, background: hiddenCols.includes(c.key) ? "transparent" : "var(--raise)" }}>
+                      <input type="checkbox" checked={!hiddenCols.includes(c.key)} onChange={() => toggleCol(c.key)} style={{ accentColor: "var(--primary)", width: 14, height: 14, cursor: "pointer" }} />
+                      <span style={{ fontSize: 13.5, fontWeight: 500, color: hiddenCols.includes(c.key) ? "var(--dim)" : "var(--ink)" }}>{c.label}</span>
+                    </label>
+                  ))}
+                </div>
+                <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid var(--line)", display: "flex", gap: 6 }}>
+                  <button className="btn btn-sm" style={{ flex: 1, justifyContent: "center", fontSize: 12 }} onClick={() => setHiddenCols([]) || localStorage.removeItem("cadence:tracker:hidden")}>Show all</button>
+                  <button className="btn btn-sm" style={{ fontSize: 12 }} onClick={() => setShowColSettings(false)}>Done</button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
         <style>{`.trk-table input{width:100%;box-sizing:border-box;border:none;background:transparent;font-family:'Outfit';font-size:12.5px;color:#1b2330;padding:5px 8px;outline:none;}
 .trk-table input:focus{background:#fff7cc;box-shadow:inset 0 0 0 2px #2563c9;border-radius:2px;}
@@ -2496,12 +2522,12 @@ function TrackerView({ ctx }) {
             <thead>
               <tr>
                 <th style={{ ...headc, width: GUT, minWidth: GUT, left: 0, zIndex: 6, background: "#e3e8ef" }}></th>
-                {cols.map((c, ci) => (
+                {visibleCols.map((c, ci) => (
                   <th key={c.key} style={{ ...headc, width: c.w, minWidth: c.w, ...(c.sticky ? { left: GUT, zIndex: 5 } : {}) }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 3, paddingRight: 6 }}>
                       <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>{c.label}</span>
                       <button title="Move left" onClick={() => moveCol(c.key, -1)} disabled={ci === 0} style={colBtn}>‹</button>
-                      <button title="Move right" onClick={() => moveCol(c.key, 1)} disabled={ci === cols.length - 1} style={colBtn}>›</button>
+                      <button title="Move right" onClick={() => moveCol(c.key, 1)} disabled={ci === visibleCols.length - 1} style={colBtn}>›</button>
                     </div>
                     <div onMouseDown={e => startResize(e, c.key, c.w)} title="Drag to resize column" style={{ position: "absolute", top: 0, right: 0, width: 6, height: "100%", cursor: "col-resize", userSelect: "none" }} />
                   </th>
@@ -2520,7 +2546,7 @@ function TrackerView({ ctx }) {
                   style={{ opacity: dragId === r._id ? 0.4 : 1, boxShadow: overId === r._id && dragId && dragId !== r._id ? "inset 0 2px 0 #2563c9" : "none" }}>
                   <td className="trk-gut" draggable onDragStart={() => setDragId(r._id)} onDragEnd={() => { setDragId(null); setOverId(null); }} title="Drag to reorder"
                     style={{ ...cell, width: GUT, minWidth: GUT, position: "sticky", left: 0, zIndex: 1, background: "#f3f5f9", color: "#6b7a92", textAlign: "center", fontSize: 11.5, fontWeight: 600, userSelect: "none" }}>{ri + 1}</td>
-                  {cols.map(c => {
+                  {visibleCols.map(c => {
                     const isRole = ROLE_KEYS.includes(c.key);
                     return (
                     <td key={c.key} style={{ ...cell, width: c.w, minWidth: c.w, maxWidth: c.w, padding: 0, verticalAlign: isRole ? "top" : "middle", whiteSpace: isRole ? "normal" : "nowrap", fontWeight: c.key === "projectName" ? 600 : 400, ...(c.sticky ? { position: "sticky", left: GUT, zIndex: 1, background: "#fff" } : {}) }}>
