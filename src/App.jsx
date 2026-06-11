@@ -2502,7 +2502,6 @@ function TrackerView({ ctx }) {
                       <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>{c.label}</span>
                       <button title="Move left" onClick={() => moveCol(c.key, -1)} disabled={ci === 0} style={colBtn}>‹</button>
                       <button title="Move right" onClick={() => moveCol(c.key, 1)} disabled={ci === cols.length - 1} style={colBtn}>›</button>
-                      <button title="Delete column" onClick={() => delCol(c.key)} style={{ ...colBtn, color: "#c0392b" }}>×</button>
                     </div>
                     <div onMouseDown={e => startResize(e, c.key, c.w)} title="Drag to resize column" style={{ position: "absolute", top: 0, right: 0, width: 6, height: "100%", cursor: "col-resize", userSelect: "none" }} />
                   </th>
