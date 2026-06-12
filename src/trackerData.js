@@ -1,4 +1,4 @@
-// Auto-generated tracker rows (normalized names, newline-separated, recognized emails).
+// Auto-generated tracker rows (normalized first-last names, newline-separated, recognized emails).
 export const EMAIL_DIR = {
 "aaron burch": "aaron.burch@rtmec.com",
 "andrew gustafson": "andrew.gustafson@rtmec.com",

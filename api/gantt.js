@@ -1,8 +1,8 @@
-// Vercel serverless function: read/write the whole tracker as one JSON doc in Neon.
+// Vercel serverless function: shared Gantt projects (join-by-code) as one JSON doc in Neon.
+// Same table as the tracker, row id = 2. Doc shape: { projects: { [projectId]: project } }.
 import { neon } from "@neondatabase/serverless";
 
-// Lazy init — calling neon() at module scope crashes the whole function
-// (FUNCTION_INVOCATION_FAILED) when DATABASE_URL is missing, hiding the real error.
+// Lazy init — module-scope neon() crashes the function when DATABASE_URL is missing.
 let _sql = null;
 function db() { if (!_sql) _sql = neon(process.env.DATABASE_URL); return _sql; }
 
@@ -25,7 +25,7 @@ export default async function handler(req, res) {
     const sql = db();
 
     if (req.method === "GET") {
-      const rows = await sql`select doc, v from tracker_doc where id = 1`;
+      const rows = await sql`select doc, v from tracker_doc where id = 2`;
       if (!rows.length) return res.status(200).json(null);
       return res.status(200).json({ ...rows[0].doc, v: Number(rows[0].v) });
     }
@@ -36,7 +36,7 @@ export default async function handler(req, res) {
       const v = Date.now();
       const json = JSON.stringify(body);
       await sql`insert into tracker_doc (id, doc, v)
-                values (1, ${json}::jsonb, ${v})
+                values (2, ${json}::jsonb, ${v})
                 on conflict (id) do update set doc = excluded.doc, v = excluded.v`;
       return res.status(200).json({ ok: true, v });
     }

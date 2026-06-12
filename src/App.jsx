@@ -8,7 +8,9 @@ import {
 } from "lucide-react";
 import { SEED_DATA, SEED_GANTT } from "./seedData.js";
 import { SEED_TRACKER, EMAIL_DIR } from "./trackerData.js";
+import { SEED_SHEETS } from "./sheetsData.js";
 import { apiLoad, apiSave } from "./trackerApi.js";
+import { ganttLoad, ganttSave } from "./ganttApi.js";
 
 /* ================================================================ *
  *  Cadence — dark team dashboard
@@ -895,6 +897,9 @@ const genCode = () => Math.random().toString(36).slice(2, 7).toUpperCase();
 const genCodes = () => { const viewerCode = genCode(); let editorCode = genCode(); while (editorCode === viewerCode) editorCode = genCode(); return { viewerCode, editorCode }; };
 const viewerCodeOf = (p) => (p && (p.viewerCode || p.code)) || "";
 const editorCodeOf = (p) => (p && p.editorCode) || "";
+// What gets uploaded to the shared store when a project is published — strip per-user fields.
+const publishableProject = (p) => { const { myRole, invited, invitedAs, invitedEmail, deleted, deletedAt, ...rest } = p; return rest; };
+const codeRoleFor = (p, code) => editorCodeOf(p).toUpperCase() === code ? "editor" : viewerCodeOf(p).toUpperCase() === code ? "viewer" : null;
 const BG_PRESETS = [
   { name: "None", css: "" },
   { name: "Red", css: "rgba(224,58,62,.30)" },
@@ -986,7 +991,82 @@ function GanttView({ ctx }) {
   const softDelete = (pid) => patchProject(pid, { deleted: true, deletedAt: Date.now() });
   const restoreProject = (pid) => patchProject(pid, { deleted: false, deletedAt: null });
   const purgeProject = (pid) => setProjects(ps => ps.filter(p => p.id !== pid));
-  const tryJoin = () => { const c = joinCode.trim().toUpperCase(); if (!c) return; let role = null; const hit = gd.projects.find(p => { if (editorCodeOf(p).toUpperCase() === c) { role = "editor"; return true; } if (viewerCodeOf(p).toUpperCase() === c) { role = "viewer"; return true; } return false; }); if (hit) { setJoinErr(""); setJoinCode(""); setJoined({ name: hit.name, role }); setTimeout(() => setJoined(null), 2600); bumpOpen(hit.id); setOpenId(hit.id); setWhoFilter("all"); } else { setJoinErr("No project with that code (demo)."); } };
+  const openJoined = (pid) => { bumpOpen(pid); setOpenId(pid); setWhoFilter("all"); };
+  const tryJoin = async () => {
+    const c = joinCode.trim().toUpperCase(); if (!c) return;
+    // Already in this browser? Open it (and switch role if a different code was used).
+    let role = null;
+    const hit = gd.projects.find(p => { role = codeRoleFor(p, c); return !!role; });
+    if (hit) {
+      if (hit.myRole === "owner") { setJoinErr(""); setJoinCode(""); openJoined(hit.id); return; } // your own project — just open it
+      if (hit.myRole !== role) setProjects(ps => ps.map(p => p.id === hit.id ? { ...p, myRole: role } : p));
+      setJoinErr(""); setJoinCode(""); setJoined({ name: hit.name, role });
+      setTimeout(() => setJoined(null), 2600); openJoined(hit.id);
+      return;
+    }
+    // Look it up in the shared store (projects published by their owners).
+    setJoinErr("Checking code…");
+    try {
+      const doc = await ganttLoad();
+      let r2 = null;
+      const remote = Object.values((doc && doc.projects) || {}).find(p => { r2 = codeRoleFor(p, c); return !!r2; });
+      if (!remote) { setJoinErr("No project with that code."); return; }
+      setProjects(ps => [...ps.filter(p => p.id !== remote.id), { ...remote, myRole: r2 }]);
+      setJoinErr(""); setJoinCode(""); setJoined({ name: remote.name, role: r2 });
+      setTimeout(() => setJoined(null), 2600); openJoined(remote.id);
+    } catch (e) {
+      const m = String((e && e.message) || "");
+      if (m.includes("DATABASE_URL")) setJoinErr("Sharing isn't live yet — the site's database hasn't been connected (admin setup needed).");
+      else if (m.includes("APP_KEY") || (e && e.status === 401)) setJoinErr("Sharing isn't live yet — the site's access key isn't configured (admin setup needed).");
+      else setJoinErr("Can't reach the sharing server right now.");
+    }
+  };
+  // Publish shareable projects (owner always; editors when their copy is newer) so codes work across devices.
+  const applyingShared = useRef(false);
+  useEffect(() => {
+    if (applyingShared.current) { applyingShared.current = false; return; }
+    const t = setTimeout(async () => {
+      const ps = gdRef.current.projects;
+      if (!ps.some(p => p.myRole !== "viewer" && (viewerCodeOf(p) || editorCodeOf(p)))) return;
+      try {
+        const doc = (await ganttLoad()) || {};
+        const shared = doc.projects || {};
+        let changed = false;
+        for (const p of ps) {
+          if (p.myRole === "viewer" || !(viewerCodeOf(p) || editorCodeOf(p))) continue;
+          if (p.deleted) { if (p.myRole === "owner" && shared[p.id]) { delete shared[p.id]; changed = true; } continue; }
+          const cur = shared[p.id];
+          const shouldWrite = p.myRole === "owner" ? (!cur || (p.updatedAt || 0) >= (cur.updatedAt || 0)) : (!cur ? false : (p.updatedAt || 0) > (cur.updatedAt || 0));
+          if (shouldWrite) { shared[p.id] = publishableProject(p); changed = true; }
+        }
+        if (changed) await ganttSave({ projects: shared });
+      } catch (e) {}
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [gd.projects]);
+  // Poll the shared store so joined projects receive the owner's updates.
+  useEffect(() => {
+    let stop = false;
+    const tick = async () => {
+      try {
+        const doc = await ganttLoad();
+        if (stop || !doc || !doc.projects) return;
+        const cur = gdRef.current.projects;
+        let changed = false;
+        const next = cur.map(p => {
+          if (p.myRole === "owner" || p.deleted) return p;
+          const sh = doc.projects[p.id];
+          if (!sh || (sh.updatedAt || 0) <= (p.updatedAt || 0)) return p;
+          changed = true;
+          return { ...sh, myRole: p.myRole };
+        });
+        if (changed) { applyingShared.current = true; setGd(g => ({ ...g, projects: next })); }
+      } catch (e) {}
+    };
+    tick();
+    const iv = setInterval(tick, 8000);
+    return () => { stop = true; clearInterval(iv); };
+  }, []);
   const [hoverGid, setHoverGid] = useState(null);
   const [hoverPos, setHoverPos] = useState({ x: 0, y: 0 });
   const [dragTip, setDragTip] = useState(null);
@@ -1000,7 +1080,7 @@ function GanttView({ ctx }) {
   const scrollRef = useRef(null);
   const trackRef = useRef(null);
   const [sx, setSx] = useState({ l: 0, w: 1, c: 1 });
-  const syncScroll = () => { const el = scrollRef.current; if (el) setSx({ l: el.scrollLeft, w: el.scrollWidth, c: el.clientWidth }); };
+  const syncScroll = () => { const el = scrollRef.current; if (el) setSx(s => (s.l === el.scrollLeft && s.w === el.scrollWidth && s.c === el.clientWidth) ? s : { l: el.scrollLeft, w: el.scrollWidth, c: el.clientWidth }); };
   useEffect(() => { syncScroll(); });
   const dragBar = (clientX) => { const t = trackRef.current, el = scrollRef.current; if (!t || !el) return; const r = t.getBoundingClientRect(); const ratio = Math.min(1, Math.max(0, (clientX - r.left) / r.width)); el.scrollLeft = ratio * (el.scrollWidth - el.clientWidth); };
   const startBarDrag = (e) => { e.preventDefault(); dragBar(e.clientX); const move = (ev) => dragBar(ev.clientX); const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); }; window.addEventListener("mousemove", move); window.addEventListener("mouseup", up); };
@@ -1028,12 +1108,29 @@ function GanttView({ ctx }) {
   useEffect(() => { if (!openId) return; const p = gdRef.current.projects.find(x => x.id === openId); if (p && p.invited) setGd(g => ({ ...g, projects: g.projects.map(x => x.id === openId ? { ...x, invited: false } : x) })); }, [openId]);
 
   const setProjects = (fn) => { setHistory(h => [...h.slice(-29), gdRef.current.projects]); setGd(g => ({ ...g, projects: fn(g.projects) })); };
-  const patchProject = (pid, patch) => setProjects(ps => ps.map(p => p.id === pid ? { ...p, ...patch, updatedAt: Date.now() } : p));
-  const patchGroup = (pid, gid, fn) => setProjects(ps => ps.map(p => p.id !== pid ? p : { ...p, updatedAt: Date.now(), groups: p.groups.map(gr => gr.id === gid ? fn(gr) : gr) }));
-  const addProject = () => { const id = uid(); const ts = Date.now(); setProjects(ps => [...ps, { id, name: "New project", color: PALETTE[ps.length % PALETTE.length], due: addDays(todayISO(), 30), start: todayISO(), myRole: "owner", ...genCodes(), codeCadence: "month", cascade: false, createdAt: ts, updatedAt: ts, groups: [] }]); setOpenId(id); setEdit({ pid: id }); };
+  // Viewers are read-only: they can only remove the project from their own list (deleted/deletedAt).
+  const patchProject = (pid, patch) => setProjects(ps => ps.map(p => {
+    if (p.id !== pid) return p;
+    if (p.myRole === "viewer") {
+      const allowed = {};
+      ["deleted", "deletedAt"].forEach(k => { if (k in patch) allowed[k] = patch[k]; });
+      return Object.keys(allowed).length ? { ...p, ...allowed } : p;
+    }
+    return { ...p, ...patch, updatedAt: Date.now() };
+  }));
+  const patchGroup = (pid, gid, fn) => setProjects(ps => ps.map(p => (p.id !== pid || p.myRole === "viewer") ? p : { ...p, updatedAt: Date.now(), groups: p.groups.map(gr => gr.id === gid ? fn(gr) : gr) }));
+  // New projects go through a draft modal — nothing is created until "Create project" is clicked.
+  const [draft, setDraft] = useState(null);
+  const startDraft = () => setDraft({ name: "", start: todayISO(), due: addDays(todayISO(), 30), color: PALETTE[gdRef.current.projects.length % PALETTE.length] });
+  const createProject = () => {
+    if (!draft || !draft.name.trim()) return;
+    const id = uid(); const ts = Date.now();
+    setProjects(ps => [...ps, { id, name: draft.name.trim(), color: draft.color, due: draft.due, start: draft.start, myRole: "owner", ...genCodes(), codeCadence: "month", cascade: false, createdAt: ts, updatedAt: ts, groups: [] }]);
+    setDraft(null); setOpenId(id); setEdit({ pid: id });
+  };
   const delProject = (pid) => { setProjects(ps => ps.filter(p => p.id !== pid)); setEdit(null); setOpenId(null); };
-  const addGroup = (pid) => { const id = uid(); const p = gdRef.current.projects.find(x => x.id === pid); const used = new Set((p ? p.groups : []).map(g => g.color)); const color = PALETTE.find(c => !used.has(c)) || PALETTE[(p ? p.groups.length : 0) % PALETTE.length]; setProjects(ps => ps.map(x => x.id !== pid ? x : { ...x, groups: [...x.groups, { id, name: "New group", color, desc: "", start: todayISO(), end: addDays(todayISO(), 5), members: [] }] })); setEdit({ pid, gid: id }); };
-  const delGroup = (pid, gid) => { const p = gdRef.current.projects.find(x => x.id === pid); let next = { pid }; if (p) { const idx = p.groups.findIndex(g => g.id === gid); const remaining = p.groups.filter(g => g.id !== gid); if (remaining.length) next = { pid, gid: remaining[Math.max(0, idx - 1)].id }; } setProjects(ps => ps.map(x => x.id !== pid ? x : { ...x, groups: x.groups.filter(g => g.id !== gid) })); setEdit(next); };
+  const addGroup = (pid) => { const id = uid(); const p = gdRef.current.projects.find(x => x.id === pid); if (p && p.myRole === "viewer") return; const used = new Set((p ? p.groups : []).map(g => g.color)); const color = PALETTE.find(c => !used.has(c)) || PALETTE[(p ? p.groups.length : 0) % PALETTE.length]; setProjects(ps => ps.map(x => x.id !== pid ? x : { ...x, groups: [...x.groups, { id, name: "New group", color, desc: "", start: todayISO(), end: addDays(todayISO(), 5), members: [] }] })); setEdit({ pid, gid: id }); };
+  const delGroup = (pid, gid) => { const p = gdRef.current.projects.find(x => x.id === pid); if (p && p.myRole === "viewer") return; let next = { pid }; if (p) { const idx = p.groups.findIndex(g => g.id === gid); const remaining = p.groups.filter(g => g.id !== gid); if (remaining.length) next = { pid, gid: remaining[Math.max(0, idx - 1)].id }; } setProjects(ps => ps.map(x => x.id !== pid ? x : { ...x, groups: x.groups.filter(g => g.id !== gid) })); setEdit(next); };
   const toggleMember = (pid, gid, mid) => patchGroup(pid, gid, gr => ({ ...gr, members: gr.members.map(m => m.id === mid ? { ...m, done: !m.done } : m) }));
   const addMember = (pid, gid, person) => patchGroup(pid, gid, gr => gr.members.some(m => m.id === person.id) ? gr : ({ ...gr, members: [...gr.members, { id: person.id, name: person.name, color: person.color, done: false }] }));
   const removeMember = (pid, gid, mid) => patchGroup(pid, gid, gr => ({ ...gr, members: gr.members.filter(m => m.id !== mid) }));
@@ -1073,10 +1170,10 @@ function GanttView({ ctx }) {
                 <input value={joinCode} onChange={e => { setJoinCode(e.target.value); setJoinErr(""); }} onKeyDown={e => e.key === "Enter" && tryJoin()} placeholder="Join with a code" style={{ width: 130, fontFamily: "Outfit", fontSize: 13, color: "var(--ink)", border: "1px solid var(--line2)", borderRadius: 10, padding: "8px 11px", background: "var(--panel)", outline: "none", textTransform: "uppercase" }} />
                 <button className="btn" onClick={tryJoin}>Join</button>
               </div>
-              <div style={{ fontSize: 10.5, color: joinErr ? "var(--primary)" : "var(--dim)", marginTop: 3, textAlign: "center" }}>{joinErr || "demo · try CLV24"}</div>
+              <div style={{ fontSize: 10.5, color: joinErr ? "var(--primary)" : "var(--dim)", marginTop: 3, textAlign: "center" }}>{joinErr || "Enter a project's viewer or editor code"}</div>
             </div>
             {gd.projects.some(p => p.deleted) && <button className="btn" onClick={() => setOpenId("__trash__")}><Trash2 size={15} />Trash ({gd.projects.filter(p => p.deleted).length})</button>}
-            <button className="btn btn-pri" onClick={addProject}><Plus size={16} />New project</button>
+            <button className="btn btn-pri" onClick={startDraft}><Plus size={16} />New project</button>
           </div>
         </div>
         {joined && <Confetti />}
@@ -1155,6 +1252,28 @@ function GanttView({ ctx }) {
             </>
           );
         })()}
+        {draft && (
+          <div className="ov" onClick={() => setDraft(null)}>
+            <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+              <div className="modal-h"><h2>New project</h2><button className="btn btn-ghost icon-btn" onClick={() => setDraft(null)}><X size={18} /></button></div>
+              <div className="fld"><label>Project name</label><input value={draft.name} onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} onKeyDown={e => e.key === "Enter" && createProject()} placeholder="e.g. Walmart Remodel" autoFocus /></div>
+              <div className="row2">
+                <div className="fld"><label>Start date</label><input type="date" value={draft.start} onKeyDown={e => e.preventDefault()} onMouseDown={e => { e.preventDefault(); try { e.currentTarget.showPicker && e.currentTarget.showPicker(); } catch (_) {} }} onChange={e => setDraft(d => ({ ...d, start: e.target.value }))} /></div>
+                <div className="fld"><label>Due date</label><input type="date" value={draft.due} onKeyDown={e => e.preventDefault()} onMouseDown={e => { e.preventDefault(); try { e.currentTarget.showPicker && e.currentTarget.showPicker(); } catch (_) {} }} onChange={e => setDraft(d => ({ ...d, due: e.target.value }))} /></div>
+              </div>
+              <div className="fld"><label>Color</label>
+                <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+                  {PALETTE.map(c => <span key={c} className={`swatch ${draft.color === c ? "on" : ""}`} style={{ background: c }} onClick={() => setDraft(d => ({ ...d, color: c }))} />)}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+                <button className="btn" style={{ flex: 1, justifyContent: "center", padding: "12px" }} onClick={() => setDraft(null)}>Cancel</button>
+                <button className="btn btn-pri" style={{ flex: 1, justifyContent: "center", padding: "12px" }} disabled={!draft.name.trim()} onClick={createProject}><Check size={15} />Create project</button>
+              </div>
+              <div className="login-foot" style={{ marginTop: 10 }}>Nothing is made until you hit Create — closing this discards the draft.</div>
+            </div>
+          </div>
+        )}
         {confirmDel && (
           <div className="ov" onClick={() => setConfirmDel(null)}>
             <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 390 }}>
@@ -1456,7 +1575,7 @@ ${rows}</div></div>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              {canOpen && proj.codeCadence !== "off" && <span style={{ fontSize: 11.5, fontWeight: 700, color: "var(--teal)", background: "rgba(79,168,232,.14)", border: "1px solid #4FA8E855", borderRadius: 8, padding: "4px 9px", letterSpacing: "1px" }} title="Viewer invite code (demo)">#{viewerCodeOf(proj)}</span>}
+              {canOpen && proj.codeCadence !== "off" && <span style={{ fontSize: 11.5, fontWeight: 700, color: "var(--teal)", background: "rgba(79,168,232,.14)", border: "1px solid #4FA8E855", borderRadius: 8, padding: "4px 9px", letterSpacing: "1px" }} title="Viewer invite code — teammates can join with this">#{viewerCodeOf(proj)}</span>}
               <span style={{ fontSize: 12, fontWeight: 700, color: ROLE_C[role], background: ROLE_C[role] + "22", border: `1px solid ${ROLE_C[role]}55`, borderRadius: 99, padding: "5px 12px", textTransform: "capitalize" }}>You're {role}</span>
               {/* demo presence: your avatar, hover for everyone */}
               <div className="pres dotwrap" style={{ position: "relative" }} onMouseEnter={() => setPresOpen(true)} onMouseLeave={() => setPresOpen(false)}>
@@ -1740,7 +1859,7 @@ ${rows}</div></div>
                   </label>}
                 </div></div>
                 <div style={{ marginTop: 8, padding: 11, background: "var(--bg)", border: "1px solid var(--line)", borderRadius: 12 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 7 }}>Invite code <span style={{ color: "var(--dim)", fontWeight: 600 }}>· demo</span></div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 7 }}>Invite code</div>
                   {editTarget.p.codeCadence === "off" ? (
                     <div style={{ fontSize: 12.5, color: "var(--muted)" }}>Joining is off — no one can join with a code.</div>
                   ) : (
@@ -1763,7 +1882,7 @@ ${rows}</div></div>
                       </select>
                     </div>
                   )}
-                  <div style={{ fontSize: 10.5, color: "var(--dim)", marginTop: 7 }}>The viewer code joins read-only; the editor code can make changes. (Real joining turns on with accounts.)</div>
+                  <div style={{ fontSize: 10.5, color: "var(--dim)", marginTop: 7 }}>Share a code with a teammate — they enter it in "Join with a code" on their device. Viewer code = read-only; editor code = can edit.</div>
                 </div>
                 <div className="foot-note" style={{ justifyContent: "flex-start", marginTop: 12 }}>Add or delete groups from the timeline (the <b style={{ color: "var(--ink)", margin: "0 3px" }}>+ Group</b> button). Delete the whole project from the project card.</div>
               </>
@@ -2039,6 +2158,7 @@ function TeamView({ ctx }) {
   const [pq, setPq] = useState("");
   const [openPerson, setOpenPerson] = useState(null);
   const [peopleOpen, setPeopleOpen] = useState(false);
+  const [projOpen, setProjOpen] = useState(true);
   const gComplete = (g) => g.members.length > 0 && g.members.every(m => m.done);
 
   // build contact book from everyone who's been on a project with you
@@ -2135,7 +2255,10 @@ function TeamView({ ctx }) {
           ))}
         </div>)}
 
-      <div className="sec-h"><FolderOpen size={18} />Projects</div>
+      <div className="sec-h" style={{ cursor: "pointer", userSelect: "none" }} onClick={() => { setProjOpen(v => !v); setPq(""); }}>
+        <FolderOpen size={18} />Projects<span style={{ marginLeft: "auto", fontSize: 12, color: "var(--dim)", fontWeight: 500 }}>{projOpen ? "▲" : "▼"}</span>
+      </div>
+      {projOpen && (
       <div className="panel">
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
           <div style={{ position: "relative", flex: 1, minWidth: 160 }}>
@@ -2183,6 +2306,7 @@ function TeamView({ ctx }) {
           );
         })()}
       </div>
+      )}
 
       <details style={{ marginTop: 10 }}>
         <summary style={{ cursor: "pointer", fontSize: 13.5, fontWeight: 600, color: "var(--muted)", padding: "4px 2px" }}>Need a group you're not on? Email any group</summary>
@@ -2366,7 +2490,7 @@ const CALKEY = "cadence:caldnotes:v1";
 function loadCalNotes() { try { const v = localStorage.getItem(CALKEY); if (v) return JSON.parse(v); } catch (e) {} return {}; }
 function saveCalNotes(n) { try { localStorage.setItem(CALKEY, JSON.stringify(n)); } catch (e) {} }
 /* ---------------- Tracker (Excel-style sheet) ---------------- */
-const TRACKER_KEY = "cadence:tracker:v2";
+const TRACKER_KEY = "cadence:tracker:v3"; // v3: re-seeded from the 2026-06-12 Excel export (COM-1 + Culvers + Costco + ALDI)
 const SHEETS_KEY = "cadence:tracker:sheets:v1";
 const DEFAULT_SHEETS = [
   { id: "main", label: "All Projects" },
@@ -2388,7 +2512,7 @@ const trackerEmailFor = (name) => {
 };
 const rowEmails = (r) => {
   const out = [];
-  ["pm", "ml", "me", "pe", "ee", "fp"].forEach(k => String(r[k] || "").split(/\n| and /).forEach(part => {
+  ["pm", "ml", "me", "pe", "ee", "fp"].forEach(k => String(r[k] || "").split(/\n|\/| and /).forEach(part => {
     const nm = part.trim(); if (!nm) return;
     const e = trackerEmailFor(nm); if (e && !out.includes(e)) out.push(e);
   }));
@@ -2405,7 +2529,7 @@ function RoleCell({ value, onSave, effLight, theme }) {
   const taRef = useRef(null);
   const pickingRef = useRef(false);
 
-  const names = String(value || "").split(/\n| and /).map(s => s.trim()).filter(Boolean);
+  const names = String(value || "").split(/\n|\/| and /).map(s => s.trim()).filter(Boolean);
 
   const commit = (text) => {
     setEditing(false);
@@ -2516,49 +2640,27 @@ const TRACKER_COLS = [
 ];
 function TrackerView({ ctx }) {
   const { effLight, theme } = ctx;
-  const [sheets, setSheets] = useState(() => loadSheets());
-  const [activeSheet, setActiveSheet] = useState("main");
-  const [renamingSheet, setRenamingSheet] = useState(null);
-
-  const switchSheet = (id) => {
-    // save current sheet before switching
-    setActiveSheet(id);
-  };
-
-  const addSheet = () => {
-    const label = window.prompt("Sheet name:");
-    if (!label || !label.trim()) return;
-    const id = "sheet_" + uid();
-    const next = [...sheets, { id, label: label.trim() }];
-    setSheets(next);
-    saveSheets(next);
-    setActiveSheet(id);
-  };
-
-  const deleteSheet = (id) => {
-    if (sheets.length <= 1) { alert("Can't delete the last sheet."); return; }
-    if (!window.confirm(`Delete sheet "${sheets.find(s => s.id === id)?.label}"?`)) return;
-    try { localStorage.removeItem(sheetKey(id)); } catch (e) {}
-    const next = sheets.filter(s => s.id !== id);
-    setSheets(next);
-    saveSheets(next);
-    if (activeSheet === id) setActiveSheet(next[0].id);
-  };
-
-  const renameSheet = (id, label) => {
-    const next = sheets.map(s => s.id === id ? { ...s, label } : s);
-    setSheets(next);
-    saveSheets(next);
-    setRenamingSheet(null);
-  };
-
-  const [data, setData] = useState(() => {
-    const s = loadTracker(activeSheet);
-    const rs = (s && s.rows) || (activeSheet === "main" ? SEED_TRACKER : []);
-    return rs.map((r, i) => r._id ? r : { ...r, _id: "r" + (r.rowNumber || i) });
+  // All sheets are held in state together and synced as one document — each sheet
+  // (COM-1, Culvers, Costco, ALDI) keeps its own rows, columns and statuses.
+  const [sheets, setSheets] = useState(() => {
+    try { const v = localStorage.getItem(SHEETS_KEY); if (v) { const p = JSON.parse(v); if (Array.isArray(p) && p.length && p[0].rows) return p; } } catch (e) {}
+    return SEED_SHEETS;
   });
-  const [cols, setCols] = useState(() => { const s = loadTracker(activeSheet); return ((s && s.cols) || TRACKER_COLS).filter(c => c.key !== "rowNumber"); });
-  const [statuses, setStatuses] = useState(() => { const s = loadTracker(activeSheet); if (s && s.statuses) return s.statuses; const rs = (s && s.rows) || SEED_TRACKER; return Array.from(new Set(rs.map(r => r.stage).filter(Boolean))); });
+  const [activeSheet, setActiveSheet] = useState(() => (SEED_SHEETS[0] && SEED_SHEETS[0].id) || "com1");
+  const [renamingSheet, setRenamingSheet] = useState(null);
+  const sheetObj = sheets.find(s => s.id === activeSheet) || sheets[0] || { id: "com1", name: "COM-1", rows: [], cols: [], statuses: [] };
+  const data = (sheetObj.rows || []).map((r, i) => r._id ? r : { ...r, _id: "r" + (r.rowNumber || i) });
+  const cols = (sheetObj.cols || TRACKER_COLS).filter(c => c.key !== "rowNumber");
+  const statuses = sheetObj.statuses || [];
+  const activeLabel = sheetObj.name || sheetObj.label || "";
+  const patchSheet = (fn) => setSheets(ss => ss.map(s => s.id === activeSheet ? { ...s, ...fn(s) } : s));
+  const setData = (v) => patchSheet(s => ({ rows: typeof v === "function" ? v((s.rows || []).map((r, i) => r._id ? r : { ...r, _id: "r" + (r.rowNumber || i) })) : v }));
+  const setCols = (v) => patchSheet(s => ({ cols: typeof v === "function" ? v((s.cols || TRACKER_COLS).filter(c => c.key !== "rowNumber")) : v }));
+  const setStatuses = (v) => patchSheet(s => ({ statuses: typeof v === "function" ? v(s.statuses || []) : v }));
+  const switchSheet = (id) => setActiveSheet(id);
+  const addSheet = () => { const label = window.prompt("Sheet name:"); if (!label || !label.trim()) return; const id = "sheet_" + uid(); setSheets(ss => [...ss, { id, name: label.trim(), cols: [{ key: "projectName", label: "Project Name", w: 260, sticky: true }, { key: "stage", label: "Stage", w: 170 }], statuses: [], rows: [] }]); setActiveSheet(id); };
+  const deleteSheet = (id) => { if (sheets.length <= 1) { alert("Can't delete the last sheet."); return; } const s = sheets.find(x => x.id === id); if (!window.confirm(`Delete sheet "${s ? (s.name || s.label) : ""}"?`)) return; const next = sheets.filter(x => x.id !== id); setSheets(next); if (activeSheet === id) setActiveSheet(next[0].id); };
+  const renameSheet = (id, label) => { setSheets(ss => ss.map(s => s.id === id ? { ...s, name: label } : s)); setRenamingSheet(null); };
 
   // Brand tabs are filtered views of the master "All Projects" list (one synced
   // source of truth) — switching sheets only changes which rows are shown, not the data.
@@ -2566,51 +2668,46 @@ function TrackerView({ ctx }) {
   const curV = useRef(0);
   const lastSave = useRef(0);
   const applyingRemote = useRef(false);
-  const buildDoc = () => ({ rows: data.map(r => ({ ...r, emails: rowEmails(r) })), cols, statuses });
-  // Load from the shared DB on open, then poll for others' changes (near real-time).
+  const hydrated = useRef(false); // true once the DB's authoritative copy has loaded — guards against pushing a stale local cache up
+  const buildDoc = () => ({ sheets: sheets.map(s => ({ ...s, rows: (s.rows || []).map(r => ({ ...r, emails: rowEmails(r) })) })) });
+  const withIds = (sh) => sh.map(s => ({ ...s, rows: (s.rows || []).map((r, i) => r._id ? r : { ...r, _id: (s.id || "s") + i }) }));
+  const docToSheets = (doc) => {
+    if (!doc) return null;
+    if (doc.sheets && doc.sheets.length) return doc.sheets;
+    if (doc.rows && doc.rows.length) { const com = { id: "com1", name: "COM-1", cols: (doc.cols || TRACKER_COLS).filter(c => c.key !== "rowNumber"), statuses: doc.statuses || [], rows: doc.rows }; return [com, ...SEED_SHEETS.filter(s => s.id !== "com1")]; }
+    return null;
+  };
+  // Load all sheets from the shared DB on open, then poll for others' changes (near real-time).
   useEffect(() => {
     let timer, cancelled = false;
     (async () => {
       try {
         const doc = await apiLoad();
         apiOk.current = true;
-        if (doc && doc.rows) {
-          applyingRemote.current = true;
-          setData(doc.rows.map((r, i) => r._id ? r : { ...r, _id: "r" + (r.rowNumber || i) }));
-          if (doc.cols) setCols(doc.cols);
-          if (doc.statuses) setStatuses(doc.statuses);
-          curV.current = doc.v || 0;
-        } else {
-          const res = await apiSave(buildDoc()); if (res && res.v) curV.current = res.v;
-        }
+        const sh = docToSheets(doc);
+        if (sh) { applyingRemote.current = true; setSheets(withIds(sh)); curV.current = (doc && doc.v) || 0; }
+        else { const res = await apiSave({ sheets: SEED_SHEETS }); if (res && res.v) curV.current = res.v; }
       } catch (e) { apiOk.current = false; }
+      hydrated.current = true;
       if (cancelled) return;
       timer = setInterval(async () => {
         if (!apiOk.current) return;
-        try {
-          const doc = await apiLoad();
-          if (doc && doc.v > curV.current && Date.now() - lastSave.current > 2500) {
-            applyingRemote.current = true;
-            setData((doc.rows || []).map((r, i) => r._id ? r : { ...r, _id: "r" + (r.rowNumber || i) }));
-            if (doc.cols) setCols(doc.cols);
-            if (doc.statuses) setStatuses(doc.statuses);
-            curV.current = doc.v;
-          }
-        } catch (e) {}
+        try { const doc = await apiLoad(); if (doc && doc.v > curV.current && Date.now() - lastSave.current > 2500) { const sh = docToSheets(doc); if (sh) { applyingRemote.current = true; setSheets(withIds(sh)); curV.current = doc.v; } } } catch (e) {}
       }, 7000);
     })();
     return () => { cancelled = true; if (timer) clearInterval(timer); };
   }, []);
   // Persist: local cache always; push to the DB (debounced) unless we just applied a remote change.
   useEffect(() => {
-    saveTracker({ cols, rows: data, statuses }, "main");
+    try { localStorage.setItem(SHEETS_KEY, JSON.stringify(sheets)); } catch (e) {}
+    if (!hydrated.current) return; // never push to the shared DB before we've loaded its copy (stops a stale local cache from overwriting it)
     if (applyingRemote.current) { applyingRemote.current = false; return; }
     if (!apiOk.current) return;
     const t = setTimeout(async () => {
       try { const res = await apiSave(buildDoc()); lastSave.current = Date.now(); if (res && res.v) curV.current = res.v; } catch (e) {}
     }, 700);
     return () => clearTimeout(t);
-  }, [cols, data, statuses]);
+  }, [sheets]);
   const [q, setQ] = useState("");
   const [stage, setStage] = useState("all");
   const [person, setPerson] = useState("all");
@@ -2618,17 +2715,15 @@ function TrackerView({ ctx }) {
   const [personSearch, setPersonSearch] = useState("");
   const personDropRef = useRef(null);
   const [dragId, setDragId] = useState(null);
+  const [selRow, setSelRow] = useState(null);
   const [overId, setOverId] = useState(null);
-  const ROLE_KEYS = ["pm", "ml", "me", "pe", "ee", "fp"];
-  const namesIn = (r) => ROLE_KEYS.flatMap(k => String(r[k] || "").split(/\n| and /).map(s => s.trim()).filter(s => s && !TRACKER_BLOCK.has(s.toUpperCase())));
+  const ROLE_KEYS = ["pm", "ml", "me", "pe", "ee", "fp", "cv_se", "cv_pe", "co_pe", "al_pm", "al_me", "al_pe", "al_ee"];
+  const namesIn = (r) => ROLE_KEYS.flatMap(k => String(r[k] || "").split(/\n|\/| and /).map(s => s.trim()).filter(s => s && !TRACKER_BLOCK.has(s.toUpperCase())));
   const people = ["all", ...Array.from(new Set(data.flatMap(namesIn))).sort()];
   const ql = q.trim().toLowerCase();
   // Normalize for brand matching: lowercase, strip punctuation/spaces (so "CULVER'S" matches the "Culvers" tab).
   const normName = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-  const activeLabel = sheets.find(s => s.id === activeSheet)?.label || "";
-  const brandFilter = activeSheet === "main" ? null : normName(activeLabel);
   const rows = data.filter(r => {
-    if (brandFilter && !normName(r.projectName).includes(brandFilter)) return false;
     if (stage !== "all" && r.stage !== stage) return false;
     if (person !== "all" && !namesIn(r).includes(person)) return false;
     if (ql && !(`${r.projectName} ${r.client} ${r.vantagepoint} ${r.pm} ${r.ml} ${r.me} ${r.pe} ${r.ee} ${r.fp}`.toLowerCase().includes(ql))) return false;
@@ -2638,7 +2733,7 @@ function TrackerView({ ctx }) {
   const statusColor = (s) => { const i = statuses.indexOf(s); return i >= 0 ? STATUS_PALETTE[i % STATUS_PALETTE.length] : "#7686A0"; };
   const update = (id, key, value) => setData(ds => ds.map(r => r._id === id ? { ...r, [key]: value } : r));
   const setStatus = (id, val) => { if (val === "__new") { const n = window.prompt("New status name:"); if (!n || !n.trim()) return; const nm = n.trim(); setStatuses(ss => ss.includes(nm) ? ss : [...ss, nm]); update(id, "stage", nm); return; } update(id, "stage", val); };
-  const addRow = () => setData(ds => [{ _id: "r" + uid(), ...(activeSheet === "main" ? {} : { projectName: activeLabel }) }, ...ds]);
+  const addRow = () => setData(ds => [{ _id: "r" + uid() }, ...ds]);
   const delRow = (id) => setData(ds => ds.filter(r => r._id !== id));
   const dropOnRow = (targetId) => { setData(ds => { if (!dragId || dragId === targetId) return ds; const from = ds.findIndex(r => r._id === dragId); const to = ds.findIndex(r => r._id === targetId); if (from < 0 || to < 0) return ds; const c = [...ds]; const [m] = c.splice(from, 1); c.splice(to, 0, m); return c; }); setDragId(null); setOverId(null); };
   const moveRow = (id, dir) => setData(ds => {
@@ -2659,7 +2754,14 @@ function TrackerView({ ctx }) {
   }, [personDropOpen]);
 
   const addCol = () => { const label = window.prompt("New column name:"); if (!label || !label.trim()) return; setCols(cs => [...cs, { key: "c_" + uid(), label: label.trim(), w: 150 }]); };
-  const delCol = (key) => { if (!window.confirm("Delete this column?")) return; setCols(cs => cs.filter(c => c.key !== key)); };
+  const delCol = (key) => {
+    const c = cols.find(x => x.key === key);
+    const nm = c ? (c.label || "this column") : "this column";
+    if (!window.confirm(`Delete the "${nm}" column?\n\nThis removes it from every row in this sheet.`)) return;
+    if (!window.confirm(`Are you sure? Deleting "${nm}" can't be undone and will sync to everyone on the team.`)) return;
+    if (!window.confirm(`Are you sure? This is a really bad idea.`)) return;
+    setCols(cs => cs.filter(c => c.key !== key));
+  };
   const moveCol = (key, dir) => setCols(cs => { const i = cs.findIndex(c => c.key === key); const j = i + dir; if (j < 0 || j >= cs.length) return cs; const c = [...cs]; [c[i], c[j]] = [c[j], c[i]]; return c; });
   const startResize = (e, key, startW) => {
     e.preventDefault(); e.stopPropagation();
@@ -2691,14 +2793,14 @@ function TrackerView({ ctx }) {
         {sheets.map(s => (
           <div key={s.id} style={{ position: "relative", display: "flex", alignItems: "center" }}>
             {renamingSheet === s.id ? (
-              <input autoFocus defaultValue={s.label}
-                onBlur={e => renameSheet(s.id, e.target.value.trim() || s.label)}
-                onKeyDown={e => { if (e.key === "Enter") renameSheet(s.id, e.target.value.trim() || s.label); if (e.key === "Escape") setRenamingSheet(null); }}
+              <input autoFocus defaultValue={s.name}
+                onBlur={e => renameSheet(s.id, e.target.value.trim() || s.name)}
+                onKeyDown={e => { if (e.key === "Enter") renameSheet(s.id, e.target.value.trim() || s.name); if (e.key === "Escape") setRenamingSheet(null); }}
                 style={{ fontFamily: "Outfit", fontSize: 15, fontWeight: 600, border: "1px solid var(--teal)", borderRadius: "8px 8px 0 0", padding: "9px 14px", background: "var(--panel2)", color: "var(--ink)", outline: "none", width: 140 }} />
             ) : (
               <button onDoubleClick={() => setRenamingSheet(s.id)} onClick={() => switchSheet(s.id)}
                 style={{ fontFamily: "Outfit", fontSize: 15, fontWeight: 600, border: "none", borderRadius: "8px 8px 0 0", padding: "10px 20px", cursor: "pointer", background: activeSheet === s.id ? "var(--panel)" : "var(--panel2)", color: activeSheet === s.id ? "var(--ink)" : "var(--muted)", borderBottom: activeSheet === s.id ? "2px solid var(--primary)" : "2px solid transparent", marginBottom: -2, transition: ".12s" }}>
-                {s.label}
+                {s.name}
               </button>
             )}
           </div>
@@ -2809,6 +2911,7 @@ function TrackerView({ ctx }) {
                       <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>{c.label}</span>
                       <button title="Move left" onClick={() => moveCol(c.key, -1)} disabled={ci === 0} style={colBtn}>‹</button>
                       <button title="Move right" onClick={() => moveCol(c.key, 1)} disabled={ci === visibleCols.length - 1} style={colBtn}>›</button>
+                      <button title="Delete column" onClick={() => delCol(c.key)} style={{ ...colBtn, color: "#c0392b", fontSize: 12 }}>×</button>
                     </div>
                     <div onMouseDown={e => startResize(e, c.key, c.w)} title="Drag to resize column" style={{ position: "absolute", top: 0, right: 0, width: 6, height: "100%", cursor: "col-resize", userSelect: "none" }} />
                   </th>
@@ -2825,12 +2928,13 @@ function TrackerView({ ctx }) {
                   onDragOver={e => { if (dragId) { e.preventDefault(); if (overId !== r._id) setOverId(r._id); } }}
                   onDrop={e => { e.preventDefault(); dropOnRow(r._id); }}
                   style={{ opacity: dragId === r._id ? 0.4 : 1, boxShadow: overId === r._id && dragId && dragId !== r._id ? "inset 0 2px 0 #2563c9" : "none" }}>
-                  <td className="trk-gut" draggable onDragStart={() => setDragId(r._id)} onDragEnd={() => { setDragId(null); setOverId(null); }} title="Drag to reorder"
-                    style={{ ...cell, width: GUT, minWidth: GUT, position: "sticky", left: 0, zIndex: 1, background: "var(--panel2)", color: "var(--muted)", textAlign: "center", fontSize: 11.5, fontWeight: 600, userSelect: "none" }}>{ri + 1}</td>
+                  <td className="trk-gut" draggable onDragStart={() => setDragId(r._id)} onDragEnd={() => { setDragId(null); setOverId(null); }}
+                    onClick={() => setSelRow(id => id === r._id ? null : r._id)} title="Click to highlight this row · drag to reorder"
+                    style={{ ...cell, width: GUT, minWidth: GUT, position: "sticky", left: 0, zIndex: 1, background: selRow === r._id ? "rgba(79,168,232,0.18)" : "var(--panel2)", color: "var(--muted)", textAlign: "center", fontSize: 11.5, fontWeight: 600, userSelect: "none" }}>{ri + 1}</td>
                   {visibleCols.map(c => {
                     const isRole = ROLE_KEYS.includes(c.key);
                     return (
-                    <td key={c.key} style={{ ...cell, width: c.w, minWidth: c.w, maxWidth: c.w, padding: 0, verticalAlign: isRole ? "top" : "middle", whiteSpace: isRole ? "normal" : "nowrap", fontWeight: c.key === "projectName" ? 600 : 400, ...(c.sticky ? { position: "sticky", left: GUT, zIndex: 1, background: "var(--panel)" } : {}) }}>
+                    <td key={c.key} style={{ ...cell, width: c.w, minWidth: c.w, maxWidth: c.w, padding: 0, verticalAlign: isRole ? "top" : "middle", whiteSpace: isRole ? "normal" : "nowrap", fontWeight: c.key === "projectName" ? 600 : 400, ...(c.sticky ? { position: "sticky", left: GUT, zIndex: 1, background: "var(--panel)" } : {}), ...(selRow === r._id ? { background: "rgba(79,168,232,0.13)" } : {}) }}>
                       {isRole ? (
                         <RoleCell value={r[c.key]} onSave={v => update(r._id, c.key, v)} effLight={effLight} theme={theme} />
                       ) : c.key === "stage" ? (
@@ -2847,14 +2951,14 @@ function TrackerView({ ctx }) {
                     </td>
                     );
                   })}
-                  <td style={{ ...cell, textAlign: "center", width: 64, minWidth: 64 }}>
+                  <td style={{ ...cell, textAlign: "center", width: 64, minWidth: 64, ...(selRow === r._id ? { background: "rgba(79,168,232,0.13)" } : {}) }}>
                     <button title={em.length ? `Email team (${em.length})` : "No team emails"} disabled={!em.length}
                       onClick={() => emailTeam(r)}
                       style={{ border: "none", background: "transparent", cursor: em.length ? "pointer" : "not-allowed", color: em.length ? "#2563c9" : "#c2c8d0", display: "grid", placeItems: "center", width: "100%" }}>
                       <Mail size={15} />
                     </button>
                   </td>
-                  <td style={{ ...cell, width: 96, minWidth: 96, textAlign: "center", padding: "2px 4px" }}>
+                  <td style={{ ...cell, width: 96, minWidth: 96, textAlign: "center", padding: "2px 4px", ...(selRow === r._id ? { background: "rgba(79,168,232,0.13)" } : {}) }}>
                     <button title="Move up" onClick={() => moveRow(r._id, -1)} style={actBtn}><ChevronUp size={15} /></button>
                     <button title="Move down" onClick={() => moveRow(r._id, 1)} style={actBtn}><ChevronDown size={15} /></button>
                     <button title="Delete row" onClick={() => { if (window.confirm("Delete this row?")) delRow(r._id); }} style={{ ...actBtn, color: "#c0392b" }}><Trash2 size={14} /></button>
@@ -2862,7 +2966,7 @@ function TrackerView({ ctx }) {
                 </tr>
                 );
               })}
-              {rows.length === 0 && <tr><td colSpan={cols.length + 3} style={{ ...cell, textAlign: "center", padding: 24, color: "#777" }}>{brandFilter ? `No projects with "${activeLabel}" in the name yet.` : "No projects match."}</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={cols.length + 3} style={{ ...cell, textAlign: "center", padding: 24, color: "#777" }}>No projects match.</td></tr>}
             </tbody>
           </table>
         </div>
