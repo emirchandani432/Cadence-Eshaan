@@ -2631,26 +2631,26 @@ function TrackerView({ ctx }) {
         <div><div className="h-title">Tracker</div><div className="h-sub">Your COM project tracker — every project and assignment, like the sheet.</div></div>
       </div>
       {/* Sheet tabs */}
-      <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 0, flexWrap: "wrap", borderBottom: "2px solid var(--line)", paddingBottom: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 0, flexWrap: "wrap", borderBottom: "2px solid var(--line)", paddingBottom: 0, justifyContent: "flex-start" }}>
         {sheets.map(s => (
           <div key={s.id} style={{ position: "relative", display: "flex", alignItems: "center" }}>
             {renamingSheet === s.id ? (
               <input autoFocus defaultValue={s.label}
                 onBlur={e => renameSheet(s.id, e.target.value.trim() || s.label)}
                 onKeyDown={e => { if (e.key === "Enter") renameSheet(s.id, e.target.value.trim() || s.label); if (e.key === "Escape") setRenamingSheet(null); }}
-                style={{ fontFamily: "Outfit", fontSize: 13, fontWeight: 600, border: "1px solid var(--teal)", borderRadius: "8px 8px 0 0", padding: "7px 10px", background: "var(--panel2)", color: "var(--ink)", outline: "none", width: 120 }} />
+                style={{ fontFamily: "Outfit", fontSize: 15, fontWeight: 600, border: "1px solid var(--teal)", borderRadius: "8px 8px 0 0", padding: "9px 14px", background: "var(--panel2)", color: "var(--ink)", outline: "none", width: 140 }} />
             ) : (
               <button onDoubleClick={() => setRenamingSheet(s.id)} onClick={() => switchSheet(s.id)}
-                style={{ fontFamily: "Outfit", fontSize: 13, fontWeight: 600, border: "none", borderRadius: "8px 8px 0 0", padding: "8px 14px", cursor: "pointer", background: activeSheet === s.id ? "var(--panel)" : "var(--panel2)", color: activeSheet === s.id ? "var(--ink)" : "var(--muted)", borderBottom: activeSheet === s.id ? "2px solid var(--primary)" : "2px solid transparent", marginBottom: -2, transition: ".12s" }}>
+                style={{ fontFamily: "Outfit", fontSize: 15, fontWeight: 600, border: "none", borderRadius: "8px 8px 0 0", padding: "10px 20px", cursor: "pointer", background: activeSheet === s.id ? "var(--panel)" : "var(--panel2)", color: activeSheet === s.id ? "var(--ink)" : "var(--muted)", borderBottom: activeSheet === s.id ? "2px solid var(--primary)" : "2px solid transparent", marginBottom: -2, transition: ".12s" }}>
                 {s.label}
               </button>
             )}
             {activeSheet === s.id && sheets.length > 1 && (
-              <button onClick={() => deleteSheet(s.id)} title="Delete sheet" style={{ position: "absolute", right: 2, top: 4, background: "none", border: "none", cursor: "pointer", color: "var(--dim)", fontSize: 13, lineHeight: 1, padding: "0 2px" }}>×</button>
+              <button onClick={() => deleteSheet(s.id)} title="Delete sheet" style={{ position: "absolute", right: 4, top: 6, background: "none", border: "none", cursor: "pointer", color: "var(--dim)", fontSize: 14, lineHeight: 1, padding: "0 2px" }}>×</button>
             )}
           </div>
         ))}
-        <button onClick={addSheet} title="Add sheet" style={{ fontFamily: "Outfit", fontSize: 13, fontWeight: 700, border: "none", borderRadius: "8px 8px 0 0", padding: "8px 12px", cursor: "pointer", background: "transparent", color: "var(--muted)", marginBottom: -2, transition: ".12s" }}>+ New Sheet</button>
+        <button onClick={addSheet} title="Add sheet" style={{ fontFamily: "Outfit", fontSize: 15, fontWeight: 700, border: "none", borderRadius: "8px 8px 0 0", padding: "10px 16px", cursor: "pointer", background: "transparent", color: "var(--muted)", marginBottom: -2, transition: ".12s" }}>+ New Sheet</button>
       </div>
 
       <div className="panel" style={{ padding: 12, width: "96vw", maxWidth: "96vw", marginLeft: "calc(-48vw + 50%)", borderTopLeftRadius: 0 }}>
