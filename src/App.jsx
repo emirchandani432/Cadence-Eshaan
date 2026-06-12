@@ -2563,6 +2563,9 @@ function TrackerView({ ctx }) {
   const [q, setQ] = useState("");
   const [stage, setStage] = useState("all");
   const [person, setPerson] = useState("all");
+  const [personDropOpen, setPersonDropOpen] = useState(false);
+  const [personSearch, setPersonSearch] = useState("");
+  const personDropRef = useRef(null);
   const [dragId, setDragId] = useState(null);
   const [overId, setOverId] = useState(null);
   const ROLE_KEYS = ["pm", "ml", "me", "pe", "ee", "fp"];
@@ -2592,6 +2595,13 @@ function TrackerView({ ctx }) {
   const [hiddenCols, setHiddenCols] = useState(() => { try { const v = localStorage.getItem("cadence:tracker:hidden"); return v ? JSON.parse(v) : []; } catch { return []; } });
   const toggleCol = (key) => setHiddenCols(prev => { const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]; localStorage.setItem("cadence:tracker:hidden", JSON.stringify(next)); return next; });
   const visibleCols = cols.filter(c => !hiddenCols.includes(c.key));
+  useEffect(() => {
+    if (!personDropOpen) return;
+    const handler = (e) => { if (personDropRef.current && !personDropRef.current.contains(e.target)) setPersonDropOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [personDropOpen]);
+
   const addCol = () => { const label = window.prompt("New column name:"); if (!label || !label.trim()) return; setCols(cs => [...cs, { key: "c_" + uid(), label: label.trim(), w: 150 }]); };
   const delCol = (key) => { if (!window.confirm("Delete this column?")) return; setCols(cs => cs.filter(c => c.key !== key)); };
   const moveCol = (key, dir) => setCols(cs => { const i = cs.findIndex(c => c.key === key); const j = i + dir; if (j < 0 || j >= cs.length) return cs; const c = [...cs]; [c[i], c[j]] = [c[j], c[i]]; return c; });
@@ -2654,9 +2664,41 @@ function TrackerView({ ctx }) {
             <option value="all">All statuses</option>
             {statuses.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
-          <select className="btn" value={person} onChange={e => setPerson(e.target.value)}>
-            {people.map(s => <option key={s} value={s}>{s === "all" ? "All people" : s}</option>)}
-          </select>
+          <div ref={personDropRef} style={{ position: "relative" }}>
+            <button className="btn" onClick={() => { setPersonDropOpen(v => !v); setPersonSearch(""); }}
+              style={{ minWidth: 130, justifyContent: "space-between", gap: 8 }}>
+              <span>{person === "all" ? "All people" : person}</span>
+              <ChevronDown size={13} />
+            </button>
+            {personDropOpen && createPortal(
+              <div onMouseDown={e => e.stopPropagation()}
+                style={{ position: "fixed", top: (personDropRef.current?.getBoundingClientRect().bottom ?? 0) + 4, left: personDropRef.current?.getBoundingClientRect().left ?? 0, zIndex: 9999, background: "var(--panel2)", border: "1px solid var(--line2)", borderRadius: 10, boxShadow: "0 10px 30px rgba(0,0,0,.35)", width: 220, overflow: "hidden" }}>
+                <div style={{ padding: "8px 8px 4px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, background: "var(--raise)", border: "1px solid var(--line)", borderRadius: 7, padding: "5px 9px" }}>
+                    <Search size={13} style={{ color: "var(--dim)", flexShrink: 0 }} />
+                    <input autoFocus value={personSearch} onChange={e => setPersonSearch(e.target.value)}
+                      placeholder="Search people…"
+                      style={{ background: "none", border: "none", outline: "none", fontFamily: "Outfit", fontSize: 13, color: "var(--ink)", width: "100%" }} />
+                  </div>
+                </div>
+                <div style={{ maxHeight: 240, overflowY: "auto", padding: "4px 6px 8px" }}>
+                  {people
+                    .filter(s => s === "all" || s.toLowerCase().includes(personSearch.toLowerCase()))
+                    .map(s => (
+                      <div key={s} onClick={() => { setPerson(s); setPersonDropOpen(false); setPersonSearch(""); }}
+                        style={{ padding: "7px 10px", borderRadius: 7, cursor: "pointer", fontSize: 13, fontWeight: s === person ? 700 : 400, color: s === person ? "var(--primary)" : "var(--ink)", background: s === person ? "var(--raise)" : "transparent" }}
+                        onMouseEnter={e => e.currentTarget.style.background = "var(--raise)"}
+                        onMouseLeave={e => e.currentTarget.style.background = s === person ? "var(--raise)" : "transparent"}>
+                        {s === "all" ? "All people" : s}
+                      </div>
+                    ))}
+                  {people.filter(s => s === "all" || s.toLowerCase().includes(personSearch.toLowerCase())).length === 0 &&
+                    <div style={{ padding: "8px 10px", fontSize: 13, color: "var(--dim)" }}>No match</div>}
+                </div>
+              </div>,
+              document.body
+            )}
+          </div>
           <span style={{ fontSize: 12.5, color: "var(--muted)" }}>{rows.length} of {data.length} projects</span>
           <div style={{ flex: 1 }} />
           <button className="btn btn-sm" onClick={addRow}><Plus size={14} />Row</button>
