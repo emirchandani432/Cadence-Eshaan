@@ -84,3 +84,19 @@ export const BG_PRESETS = [
   { name: "Purple", css: "rgba(154,107,240,.30)" },
   { name: "Amber", css: "rgba(232,165,60,.30)" },
 ];
+
+// Demo seed projects for first-run gantt
+export function gSample() {
+  const t = todayISO();
+  return { projects: [
+    { id: uid(), name: "Clovers", color: "#E03A3E", due: addDays(t, 16), start: addDays(t, -12), myRole: "owner", viewerCode: "CLV24", editorCode: "CLVED", codeCadence: "month", cascade: false, groups: [
+      { id: uid(), name: "Survey", color: "#4FA8E8", desc: "Topographic survey & site boundaries.", start: addDays(t, -12), end: addDays(t, -6), members: [{ id: uid(), name: "Maya Chen", color: "#4FA8E8", done: true }, { id: uid(), name: "Sara Lopez", color: "#9A6BF0", done: true }] },
+      { id: uid(), name: "Civil", color: "#E8A53C", desc: "Grading, drainage, foundation prep.", start: addDays(t, -5), end: addDays(t, 2), members: [{ id: uid(), name: "Devon Brooks", color: "#2E80C2", done: false }, { id: uid(), name: "Maya Chen", color: "#4FA8E8", done: true }] },
+      { id: uid(), name: "Electrical", color: "#5FD18C", desc: "Rough-in and panel install.", start: addDays(t, 3), end: addDays(t, 9), members: [{ id: uid(), name: "Sara Lopez", color: "#9A6BF0", done: false }] },
+    ]},
+    { id: uid(), name: "Walmart Remodel", color: "#4FA8E8", due: addDays(t, 78), start: addDays(t, 6), myRole: "editor", viewerCode: "WMR78", editorCode: "WMRED", codeCadence: "month", cascade: false, groups: [
+      { id: uid(), name: "Demo", color: "#E0734A", desc: "Interior demolition.", start: addDays(t, 6), end: addDays(t, 16), members: [{ id: uid(), name: "Devon Brooks", color: "#2E80C2", done: false }] },
+      { id: uid(), name: "Framing", color: "#C56BD6", desc: "Steel stud framing.", start: addDays(t, 17), end: addDays(t, 38), members: [{ id: uid(), name: "Maya Chen", color: "#4FA8E8", done: false }] },
+    ]},
+  ] };
+}
