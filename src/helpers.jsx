@@ -75,3 +75,12 @@ export function MemberAv({ m, size = 20 }) {
     </span>
   );
 }
+
+export const BG_PRESETS = [
+  { name: "None", css: "" },
+  { name: "Red", css: "rgba(224,58,62,.30)" },
+  { name: "Blue", css: "rgba(79,168,232,.30)" },
+  { name: "Green", css: "rgba(51,179,107,.30)" },
+  { name: "Purple", css: "rgba(154,107,240,.30)" },
+  { name: "Amber", css: "rgba(232,165,60,.30)" },
+];
