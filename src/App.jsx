@@ -6,14 +6,13 @@ import {
   CheckCircle2, Circle, Clock, FolderOpen, AlertCircle, LogOut, Send, ShieldCheck,
   LayoutDashboard, GanttChartSquare, ChevronDown, ChevronUp, Settings, TrendingUp, Flame, Sun, Moon, Monitor, RefreshCw, Minus, RotateCcw, Bell, MessageSquare, Table
 } from "lucide-react";
-import MailView from "./MailView.jsx";
 import { SEED_DATA, SEED_GANTT } from "./seedData.js";
 import { SEED_TRACKER, EMAIL_DIR } from "./trackerData.js";
 import { apiLoad, apiSave } from "./trackerApi.js";
 
 /* ================================================================ *
  *  Cadence — dark team dashboard
- *  Home · Gantt · Board · Calendar · Team · Outlook email
+ *  Home · Gantt · Board · Calendar · Team
  * ================================================================ */
 
 const css = `
@@ -318,7 +317,6 @@ const NAV = [
   { id: "alerts", label: "Inbox", Icon: Bell },
   { id: "calendar", label: "Calendar", Icon: CalendarDays },
   { id: "team", label: "Team", Icon: Users },
-  { id: "mail", label: "Mail", Icon: Mail },
 ];
 
 /* ---------- storage (browser localStorage) ---------- */
@@ -531,7 +529,6 @@ export default function App() {
         {view === "alerts" && <NotificationsView ctx={ctx} />}
         {view === "calendar" && <CalendarView ctx={ctx} />}
         {view === "team" && <TeamView ctx={ctx} />}
-        {view === "mail" && <MailView />}
       </div>
 
       {taskModal && (
