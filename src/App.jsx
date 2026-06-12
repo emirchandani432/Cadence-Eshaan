@@ -2346,6 +2346,7 @@ function RoleCell({ value, onSave, effLight, theme }) {
   const [sugIdx, setSugIdx] = useState(-1);
   const [dropPos, setDropPos] = useState({ top: 0, left: 0 });
   const taRef = useRef(null);
+  const pickingRef = useRef(false);
 
   const names = String(value || "").split(/\n| and /).map(s => s.trim()).filter(Boolean);
 
@@ -2411,12 +2412,12 @@ function RoleCell({ value, onSave, effLight, theme }) {
           value={draft}
           onChange={handleChange}
           onKeyDown={handleKey}
-          onBlur={e => { if (!e.relatedTarget?.dataset?.suggestion) { commit(draft); } }} />
+          onBlur={() => { if (!pickingRef.current) commit(draft); }} />
         {suggestions.length > 0 && createPortal(
           <div style={{ position: "fixed", top: dropPos.top, left: dropPos.left, zIndex: 9999, background: theme === "light" ? "#fff" : theme === "twilight" ? "#2E2B50" : "#172E4B", border: `1px solid ${theme === "light" ? "#c0cad8" : theme === "twilight" ? "#423E6E" : "#26456B"}`, borderRadius: 8, boxShadow: "0 8px 28px rgba(0,0,0,.35)", minWidth: 220, overflow: "hidden" }}>
             {suggestions.map((s, i) => (
               <div key={s} data-suggestion="1" tabIndex={-1}
-                onMouseDown={e => { e.preventDefault(); pickSuggestion(s); }}
+                onMouseDown={e => { e.preventDefault(); pickingRef.current = true; pickSuggestion(s); setTimeout(() => { pickingRef.current = false; }, 100); }}
                 style={{ padding: "8px 14px", fontSize: 13, cursor: "pointer", background: i === sugIdx ? "#E03A3E" : "transparent", color: i === sugIdx ? "#fff" : theme === "light" ? "#1b2330" : "#E4DEFF", fontFamily: "Outfit", fontWeight: 500 }}>
                 {s}
               </div>
