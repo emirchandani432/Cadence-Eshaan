@@ -2671,31 +2671,42 @@ function TrackerView({ ctx }) {
               <ChevronDown size={13} />
             </button>
             {personDropOpen && createPortal(
-              <div onMouseDown={e => e.stopPropagation()}
-                style={{ position: "fixed", top: (personDropRef.current?.getBoundingClientRect().bottom ?? 0) + 4, left: personDropRef.current?.getBoundingClientRect().left ?? 0, zIndex: 9999, background: "var(--panel2)", border: "1px solid var(--line2)", borderRadius: 10, boxShadow: "0 10px 30px rgba(0,0,0,.35)", width: 220, overflow: "hidden" }}>
-                <div style={{ padding: "8px 8px 4px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, background: "var(--raise)", border: "1px solid var(--line)", borderRadius: 7, padding: "5px 9px" }}>
-                    <Search size={13} style={{ color: "var(--dim)", flexShrink: 0 }} />
-                    <input autoFocus value={personSearch} onChange={e => setPersonSearch(e.target.value)}
-                      placeholder="Search people…"
-                      style={{ background: "none", border: "none", outline: "none", fontFamily: "Outfit", fontSize: 13, color: "var(--ink)", width: "100%" }} />
-                  </div>
-                </div>
-                <div style={{ maxHeight: 240, overflowY: "auto", padding: "4px 6px 8px" }}>
-                  {people
-                    .filter(s => s === "all" || s.toLowerCase().includes(personSearch.toLowerCase()))
-                    .map(s => (
-                      <div key={s} onClick={() => { setPerson(s); setPersonDropOpen(false); setPersonSearch(""); }}
-                        style={{ padding: "7px 10px", borderRadius: 7, cursor: "pointer", fontSize: 13, fontWeight: s === person ? 700 : 400, color: s === person ? "var(--primary)" : "var(--ink)", background: s === person ? "var(--raise)" : "transparent" }}
-                        onMouseEnter={e => e.currentTarget.style.background = "var(--raise)"}
-                        onMouseLeave={e => e.currentTarget.style.background = s === person ? "var(--raise)" : "transparent"}>
-                        {s === "all" ? "All people" : s}
+              (() => {
+                const bg     = theme === "light" ? "#fff"     : theme === "twilight" ? "#2E2B50" : "#172E4B";
+                const bg2    = theme === "light" ? "#F6F9FD"  : theme === "twilight" ? "#252340" : "#11223A";
+                const border = theme === "light" ? "#C4D0E2"  : theme === "twilight" ? "#423E6E" : "#26456B";
+                const ink    = theme === "light" ? "#16243A"  : theme === "twilight" ? "#E4DEFF" : "#E9EFF7";
+                const muted  = theme === "light" ? "#566884"  : theme === "twilight" ? "#9B94CC" : "#90A2BC";
+                const hover  = theme === "light" ? "#EDF1F8"  : theme === "twilight" ? "#373462" : "#1E3A5C";
+                const accent = "#E03A3E";
+                return (
+                  <div onMouseDown={e => e.stopPropagation()}
+                    style={{ position: "fixed", top: (personDropRef.current?.getBoundingClientRect().bottom ?? 0) + 4, left: personDropRef.current?.getBoundingClientRect().left ?? 0, zIndex: 9999, background: bg, border: `1px solid ${border}`, borderRadius: 10, boxShadow: "0 10px 30px rgba(0,0,0,.35)", width: 220, overflow: "hidden" }}>
+                    <div style={{ padding: "8px 8px 4px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, background: bg2, border: `1px solid ${border}`, borderRadius: 7, padding: "5px 9px" }}>
+                        <Search size={13} style={{ color: muted, flexShrink: 0 }} />
+                        <input autoFocus value={personSearch} onChange={e => setPersonSearch(e.target.value)}
+                          placeholder="Search people…"
+                          style={{ background: "none", border: "none", outline: "none", fontFamily: "Outfit", fontSize: 13, color: ink, width: "100%" }} />
                       </div>
-                    ))}
-                  {people.filter(s => s === "all" || s.toLowerCase().includes(personSearch.toLowerCase())).length === 0 &&
-                    <div style={{ padding: "8px 10px", fontSize: 13, color: "var(--dim)" }}>No match</div>}
-                </div>
-              </div>,
+                    </div>
+                    <div style={{ maxHeight: 240, overflowY: "auto", padding: "4px 6px 8px" }}>
+                      {people
+                        .filter(s => s === "all" || s.toLowerCase().includes(personSearch.toLowerCase()))
+                        .map(s => (
+                          <div key={s} onClick={() => { setPerson(s); setPersonDropOpen(false); setPersonSearch(""); }}
+                            style={{ padding: "7px 10px", borderRadius: 7, cursor: "pointer", fontSize: 13, fontWeight: s === person ? 700 : 400, color: s === person ? accent : ink, background: s === person ? hover : "transparent" }}
+                            onMouseEnter={e => e.currentTarget.style.background = hover}
+                            onMouseLeave={e => e.currentTarget.style.background = s === person ? hover : "transparent"}>
+                            {s === "all" ? "All people" : s}
+                          </div>
+                        ))}
+                      {people.filter(s => s === "all" || s.toLowerCase().includes(personSearch.toLowerCase())).length === 0 &&
+                        <div style={{ padding: "8px 10px", fontSize: 13, color: muted }}>No match</div>}
+                    </div>
+                  </div>
+                );
+              })(),
               document.body
             )}
           </div>
