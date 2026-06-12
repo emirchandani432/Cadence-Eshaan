@@ -951,6 +951,7 @@ function GanttView({ ctx }) {
   const [joinErr, setJoinErr] = useState("");
   const [joined, setJoined] = useState(null);
   const [codeRole, setCodeRole] = useState("viewer"); // which invite code the panel shows; viewer by default
+  const [sortBy, setSortBy] = useState("created"); // project sort: created (oldest first) | name | modified
   const [presOpen, setPresOpen] = useState(false);
   const [confirmDel, setConfirmDel] = useState(null);
   const [purgeArm, setPurgeArm] = useState(null);
@@ -1027,9 +1028,9 @@ function GanttView({ ctx }) {
   useEffect(() => { if (!openId) return; const p = gdRef.current.projects.find(x => x.id === openId); if (p && p.invited) setGd(g => ({ ...g, projects: g.projects.map(x => x.id === openId ? { ...x, invited: false } : x) })); }, [openId]);
 
   const setProjects = (fn) => { setHistory(h => [...h.slice(-29), gdRef.current.projects]); setGd(g => ({ ...g, projects: fn(g.projects) })); };
-  const patchProject = (pid, patch) => setProjects(ps => ps.map(p => p.id === pid ? { ...p, ...patch } : p));
-  const patchGroup = (pid, gid, fn) => setProjects(ps => ps.map(p => p.id !== pid ? p : { ...p, groups: p.groups.map(gr => gr.id === gid ? fn(gr) : gr) }));
-  const addProject = () => { const id = uid(); setProjects(ps => [...ps, { id, name: "New project", color: PALETTE[ps.length % PALETTE.length], due: addDays(todayISO(), 30), start: todayISO(), myRole: "owner", ...genCodes(), codeCadence: "month", cascade: false, groups: [] }]); setOpenId(id); setEdit({ pid: id }); };
+  const patchProject = (pid, patch) => setProjects(ps => ps.map(p => p.id === pid ? { ...p, ...patch, updatedAt: Date.now() } : p));
+  const patchGroup = (pid, gid, fn) => setProjects(ps => ps.map(p => p.id !== pid ? p : { ...p, updatedAt: Date.now(), groups: p.groups.map(gr => gr.id === gid ? fn(gr) : gr) }));
+  const addProject = () => { const id = uid(); const ts = Date.now(); setProjects(ps => [...ps, { id, name: "New project", color: PALETTE[ps.length % PALETTE.length], due: addDays(todayISO(), 30), start: todayISO(), myRole: "owner", ...genCodes(), codeCadence: "month", cascade: false, createdAt: ts, updatedAt: ts, groups: [] }]); setOpenId(id); setEdit({ pid: id }); };
   const delProject = (pid) => { setProjects(ps => ps.filter(p => p.id !== pid)); setEdit(null); setOpenId(null); };
   const addGroup = (pid) => { const id = uid(); const p = gdRef.current.projects.find(x => x.id === pid); const used = new Set((p ? p.groups : []).map(g => g.color)); const color = PALETTE.find(c => !used.has(c)) || PALETTE[(p ? p.groups.length : 0) % PALETTE.length]; setProjects(ps => ps.map(x => x.id !== pid ? x : { ...x, groups: [...x.groups, { id, name: "New group", color, desc: "", start: todayISO(), end: addDays(todayISO(), 5), members: [] }] })); setEdit({ pid, gid: id }); };
   const delGroup = (pid, gid) => { const p = gdRef.current.projects.find(x => x.id === pid); let next = { pid }; if (p) { const idx = p.groups.findIndex(g => g.id === gid); const remaining = p.groups.filter(g => g.id !== gid); if (remaining.length) next = { pid, gid: remaining[Math.max(0, idx - 1)].id }; } setProjects(ps => ps.map(x => x.id !== pid ? x : { ...x, groups: x.groups.filter(g => g.id !== gid) })); setEdit(next); };
@@ -1081,9 +1082,18 @@ function GanttView({ ctx }) {
         {joined && <Confetti />}
         {joined && <div className="toast">🎉 Successfully joined "{joined.name}" as {joined.role}</div>}
         {gd.projects.filter(p => !p.deleted).length > 0 && (
-          <div style={{ position: "relative", maxWidth: 320, marginBottom: 14 }}>
-            <Search size={15} style={{ position: "absolute", left: 11, top: 10, color: "var(--dim)" }} />
-            <input value={pickSearch} onChange={e => setPickSearch(e.target.value)} placeholder="Search projects…" style={{ width: "100%", paddingLeft: 34, fontFamily: "Outfit", fontSize: 13.5, color: "var(--ink)", border: "1px solid var(--line2)", borderRadius: 11, padding: "9px 12px 9px 34px", background: "var(--panel)", outline: "none" }} />
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+            <div style={{ position: "relative", flex: "1 1 220px", maxWidth: 320 }}>
+              <Search size={15} style={{ position: "absolute", left: 11, top: 10, color: "var(--dim)" }} />
+              <input value={pickSearch} onChange={e => setPickSearch(e.target.value)} placeholder="Search projects…" style={{ width: "100%", paddingLeft: 34, fontFamily: "Outfit", fontSize: 13.5, color: "var(--ink)", border: "1px solid var(--line2)", borderRadius: 11, padding: "9px 12px 9px 34px", background: "var(--panel)", outline: "none" }} />
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "var(--muted)" }}>Sort
+              <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ fontFamily: "Outfit", fontSize: 13, color: "var(--ink)", border: "1px solid var(--line2)", borderRadius: 10, padding: "8px 10px", background: "var(--panel)", outline: "none", cursor: "pointer" }}>
+                <option value="created">Date created</option>
+                <option value="name">Name (A–Z)</option>
+                <option value="modified">Last modified</option>
+              </select>
+            </label>
           </div>
         )}
         {gd.projects.filter(p => !p.deleted).length >= 2 && !pickSearch.trim() && (
@@ -1093,14 +1103,20 @@ function GanttView({ ctx }) {
             <ChevronRight size={18} style={{ marginLeft: "auto", color: "var(--muted)" }} />
           </div>
         )}
-        {(() => { const pickList = gd.projects.filter(p => !p.deleted && (!pickSearch.trim() || p.name.toLowerCase().includes(pickSearch.trim().toLowerCase()))); return (
-          gd.projects.filter(p => !p.deleted).length === 0 ? <div className="empty-sm" style={{ padding: 40 }}>No projects yet — create your first one.</div> :
-          pickList.length === 0 ? <div className="empty-sm" style={{ padding: 30 }}>No projects match "{pickSearch}".</div> :
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(270px,1fr))", gap: 14 }}>
-            {pickList.map(p => {
-              const rem = remaining(p.due, now);
-              const total = p.groups.length, done = p.groups.filter(g => g.members.length > 0 && g.members.every(m => m.done)).length;
-              return (
+        {(() => {
+          const base = gd.projects.filter(p => !p.deleted && (!pickSearch.trim() || p.name.toLowerCase().includes(pickSearch.trim().toLowerCase())));
+          const order = new Map(gd.projects.map((p, i) => [p.id, i]));
+          const createdVal = (p) => p.createdAt || order.get(p.id) || 0;
+          const updatedVal = (p) => p.updatedAt || p.createdAt || order.get(p.id) || 0;
+          const sortFn = sortBy === "name" ? (a, b) => (a.name || "").localeCompare(b.name || "")
+            : sortBy === "modified" ? (a, b) => updatedVal(b) - updatedVal(a)
+            : (a, b) => createdVal(a) - createdVal(b);
+          const active = base.filter(p => !p.done).sort(sortFn);
+          const completed = base.filter(p => p.done).sort(sortFn);
+          const renderCard = (p) => {
+            const rem = remaining(p.due, now);
+            const total = p.groups.length, done = p.groups.filter(g => g.members.length > 0 && g.members.every(m => m.done)).length;
+            return (
                 <div key={p.id} className="panel" style={{ position: "relative", borderTop: `3px solid ${p.color}`, paddingBottom: 12, ...(p.invited ? { boxShadow: "0 0 0 2px var(--teal)" } : {}) }}>
                   {p.invited && <div style={{ position: "absolute", top: -10, left: 12, zIndex: 4, background: "var(--teal)", color: "#06121e", fontSize: 11, fontWeight: 800, padding: "3px 10px", borderRadius: 99, boxShadow: "0 3px 10px rgba(0,0,0,.3)" }}>Invited! · {p.invitedAs || "editor"}</div>}
                   {p.done && <div style={{ position: "absolute", inset: 0, background: "rgba(51,179,107,.16)", border: "2px solid var(--done)", borderRadius: 18, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2, pointerEvents: "none" }}><span style={{ fontFamily: "Fraunces", fontSize: 21, fontWeight: 700, color: "var(--done)", display: "flex", gap: 8, alignItems: "center" }}><CheckCircle2 size={23} />Completed</span></div>}
@@ -1118,10 +1134,27 @@ function GanttView({ ctx }) {
                     <button className="btn btn-ghost" onClick={(e) => { e.stopPropagation(); setConfirmDel(p); }} style={{ padding: "9px 13px", color: "#ff8a8c" }} title="Delete project"><X size={19} /></button>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        ); })()}
+            );
+          };
+          const grid = (list) => <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(270px,1fr))", gap: 14 }}>{list.map(renderCard)}</div>;
+          return (
+            gd.projects.filter(p => !p.deleted).length === 0 ? <div className="empty-sm" style={{ padding: 40 }}>No projects yet — create your first one.</div> :
+            base.length === 0 ? <div className="empty-sm" style={{ padding: 30 }}>No projects match "{pickSearch}".</div> :
+            <>
+              {active.length > 0 ? grid(active) : <div className="empty-sm" style={{ padding: 24 }}>No active projects — everything's complete. 🎉</div>}
+              {completed.length > 0 && (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "26px 0 12px" }}>
+                    <CheckCircle2 size={17} color="var(--done)" />
+                    <span style={{ fontFamily: "Fraunces", fontSize: 16.5, fontWeight: 600, color: "var(--ink)" }}>Completed</span>
+                    <span style={{ fontSize: 12.5, color: "var(--dim)", fontWeight: 600 }}>{completed.length}</span>
+                  </div>
+                  {grid(completed)}
+                </>
+              )}
+            </>
+          );
+        })()}
         {confirmDel && (
           <div className="ov" onClick={() => setConfirmDel(null)}>
             <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 390 }}>
