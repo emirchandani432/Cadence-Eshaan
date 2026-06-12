@@ -2500,14 +2500,8 @@ function TrackerView({ ctx }) {
   const [cols, setCols] = useState(() => { const s = loadTracker(activeSheet); return ((s && s.cols) || TRACKER_COLS).filter(c => c.key !== "rowNumber"); });
   const [statuses, setStatuses] = useState(() => { const s = loadTracker(activeSheet); if (s && s.statuses) return s.statuses; const rs = (s && s.rows) || SEED_TRACKER; return Array.from(new Set(rs.map(r => r.stage).filter(Boolean))); });
 
-  // Reload data when sheet changes
-  useEffect(() => {
-    const s = loadTracker(activeSheet);
-    const rs = (s && s.rows) || (activeSheet === "main" ? SEED_TRACKER : []);
-    setData(rs.map((r, i) => r._id ? r : { ...r, _id: "r" + (r.rowNumber || i) }));
-    setCols((s && s.cols) ? s.cols.filter(c => c.key !== "rowNumber") : TRACKER_COLS.filter(c => c.key !== "rowNumber"));
-    setStatuses(s && s.statuses ? s.statuses : Array.from(new Set(rs.map(r => r.stage).filter(Boolean))));
-  }, [activeSheet]);
+  // Brand tabs are filtered views of the master "All Projects" list (one synced
+  // source of truth) — switching sheets only changes which rows are shown, not the data.
   const apiOk = useRef(false);
   const curV = useRef(0);
   const lastSave = useRef(0);
@@ -2549,7 +2543,7 @@ function TrackerView({ ctx }) {
   }, []);
   // Persist: local cache always; push to the DB (debounced) unless we just applied a remote change.
   useEffect(() => {
-    saveTracker({ cols, rows: data, statuses }, activeSheet);
+    saveTracker({ cols, rows: data, statuses }, "main");
     if (applyingRemote.current) { applyingRemote.current = false; return; }
     if (!apiOk.current) return;
     const t = setTimeout(async () => {
@@ -2569,7 +2563,12 @@ function TrackerView({ ctx }) {
   const namesIn = (r) => ROLE_KEYS.flatMap(k => String(r[k] || "").split(/\n| and /).map(s => s.trim()).filter(s => s && !TRACKER_BLOCK.has(s.toUpperCase())));
   const people = ["all", ...Array.from(new Set(data.flatMap(namesIn))).sort()];
   const ql = q.trim().toLowerCase();
+  // Normalize for brand matching: lowercase, strip punctuation/spaces (so "CULVER'S" matches the "Culvers" tab).
+  const normName = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const activeLabel = sheets.find(s => s.id === activeSheet)?.label || "";
+  const brandFilter = activeSheet === "main" ? null : normName(activeLabel);
   const rows = data.filter(r => {
+    if (brandFilter && !normName(r.projectName).includes(brandFilter)) return false;
     if (stage !== "all" && r.stage !== stage) return false;
     if (person !== "all" && !namesIn(r).includes(person)) return false;
     if (ql && !(`${r.projectName} ${r.client} ${r.vantagepoint} ${r.pm} ${r.ml} ${r.me} ${r.pe} ${r.ee} ${r.fp}`.toLowerCase().includes(ql))) return false;
@@ -2579,7 +2578,7 @@ function TrackerView({ ctx }) {
   const statusColor = (s) => { const i = statuses.indexOf(s); return i >= 0 ? STATUS_PALETTE[i % STATUS_PALETTE.length] : "#7686A0"; };
   const update = (id, key, value) => setData(ds => ds.map(r => r._id === id ? { ...r, [key]: value } : r));
   const setStatus = (id, val) => { if (val === "__new") { const n = window.prompt("New status name:"); if (!n || !n.trim()) return; const nm = n.trim(); setStatuses(ss => ss.includes(nm) ? ss : [...ss, nm]); update(id, "stage", nm); return; } update(id, "stage", val); };
-  const addRow = () => setData(ds => [{ _id: "r" + uid() }, ...ds]);
+  const addRow = () => setData(ds => [{ _id: "r" + uid(), ...(activeSheet === "main" ? {} : { projectName: activeLabel }) }, ...ds]);
   const delRow = (id) => setData(ds => ds.filter(r => r._id !== id));
   const dropOnRow = (targetId) => { setData(ds => { if (!dragId || dragId === targetId) return ds; const from = ds.findIndex(r => r._id === dragId); const to = ds.findIndex(r => r._id === targetId); if (from < 0 || to < 0) return ds; const c = [...ds]; const [m] = c.splice(from, 1); c.splice(to, 0, m); return c; }); setDragId(null); setOverId(null); };
   const moveRow = (id, dir) => setData(ds => {
@@ -2806,7 +2805,7 @@ function TrackerView({ ctx }) {
                 </tr>
                 );
               })}
-              {rows.length === 0 && <tr><td colSpan={cols.length + 3} style={{ ...cell, textAlign: "center", padding: 24, color: "#777" }}>No projects match.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={cols.length + 3} style={{ ...cell, textAlign: "center", padding: 24, color: "#777" }}>{brandFilter ? `No projects with "${activeLabel}" in the name yet.` : "No projects match."}</td></tr>}
             </tbody>
           </table>
         </div>
