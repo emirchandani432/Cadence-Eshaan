@@ -5,7 +5,7 @@ Cadence is a dark-themed React team dashboard for RTM Engineering Consultants (r
 It is a single-page app built with React + Vite, deployed on Vercel, with a Neon PostgreSQL database for shared tracker data.
 
 **GitHub repo:** https://github.com/emirchandani432/Cadence-Eshaan
-**Local folder:** `/Users/eshaan/Desktop/Cadence-Eshaan`
+**Local folder:** `/Users/eshaan/Developer/Cadence-Eshaan`
 
 ---
 
