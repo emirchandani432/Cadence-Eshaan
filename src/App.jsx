@@ -798,12 +798,12 @@ function buildNotifs(gd) {
 function gSample() {
   const t = todayISO();
   return { projects: [
-    { id: uid(), name: "Clovers", color: "#E03A3E", due: addDays(t, 16), start: addDays(t, -12), myRole: "owner", code: "CLV24", codeCadence: "month", cascade: false, groups: [
+    { id: uid(), name: "Clovers", color: "#E03A3E", due: addDays(t, 16), start: addDays(t, -12), myRole: "owner", viewerCode: "CLV24", editorCode: "CLVED", codeCadence: "month", cascade: false, groups: [
       { id: uid(), name: "Survey", color: "#4FA8E8", desc: "Topographic survey & site boundaries.", start: addDays(t, -12), end: addDays(t, -6), members: [{ id: uid(), name: "Maya Chen", color: "#4FA8E8", done: true }, { id: uid(), name: "Sara Lopez", color: "#9A6BF0", done: true }] },
       { id: uid(), name: "Civil", color: "#E8A53C", desc: "Grading, drainage, foundation prep.", start: addDays(t, -5), end: addDays(t, 2), members: [{ id: uid(), name: "Devon Brooks", color: "#2E80C2", done: false }, { id: uid(), name: "Maya Chen", color: "#4FA8E8", done: true }] },
       { id: uid(), name: "Electrical", color: "#5FD18C", desc: "Rough-in and panel install.", start: addDays(t, 3), end: addDays(t, 9), members: [{ id: uid(), name: "Sara Lopez", color: "#9A6BF0", done: false }] },
     ]},
-    { id: uid(), name: "Walmart Remodel", color: "#4FA8E8", due: addDays(t, 78), start: addDays(t, 6), myRole: "editor", code: "WMR78", codeCadence: "month", cascade: false, groups: [
+    { id: uid(), name: "Walmart Remodel", color: "#4FA8E8", due: addDays(t, 78), start: addDays(t, 6), myRole: "editor", viewerCode: "WMR78", editorCode: "WMRED", codeCadence: "month", cascade: false, groups: [
       { id: uid(), name: "Demo", color: "#E0734A", desc: "Interior demolition.", start: addDays(t, 6), end: addDays(t, 16), members: [{ id: uid(), name: "Devon Brooks", color: "#2E80C2", done: false }] },
       { id: uid(), name: "Framing", color: "#C56BD6", desc: "Steel stud framing.", start: addDays(t, 17), end: addDays(t, 38), members: [{ id: uid(), name: "Maya Chen", color: "#4FA8E8", done: false }] },
     ]},
@@ -891,6 +891,10 @@ function remaining(dueISO, nowMs) {
 }
 const ROLE_C = { owner: "#E03A3E", editor: "#4FA8E8", viewer: "#6E83A2" };
 const genCode = () => Math.random().toString(36).slice(2, 7).toUpperCase();
+// Two distinct invite codes per project: viewers join read-only, editors can edit.
+const genCodes = () => { const viewerCode = genCode(); let editorCode = genCode(); while (editorCode === viewerCode) editorCode = genCode(); return { viewerCode, editorCode }; };
+const viewerCodeOf = (p) => (p && (p.viewerCode || p.code)) || "";
+const editorCodeOf = (p) => (p && p.editorCode) || "";
 const BG_PRESETS = [
   { name: "None", css: "" },
   { name: "Red", css: "rgba(224,58,62,.30)" },
@@ -946,6 +950,7 @@ function GanttView({ ctx }) {
   const [joinCode, setJoinCode] = useState("");
   const [joinErr, setJoinErr] = useState("");
   const [joined, setJoined] = useState(null);
+  const [codeRole, setCodeRole] = useState("viewer"); // which invite code the panel shows; viewer by default
   const [presOpen, setPresOpen] = useState(false);
   const [confirmDel, setConfirmDel] = useState(null);
   const [purgeArm, setPurgeArm] = useState(null);
@@ -959,12 +964,28 @@ function GanttView({ ctx }) {
   const [cascPick, setCascPick] = useState(null);
   const [cascSel, setCascSel] = useState([]);
   useEffect(() => { setAdjOpen(false); setAdjDelta(0); setAdjMode("none"); setAdjSel([]); setMvStart(false); setMvEnd(true); }, [edit && edit.gid]);
-  const regenCode = (pid) => patchProject(pid, { code: genCode() });
+  const regenCode = (pid, role) => setProjects(ps => ps.map(p => {
+    if (p.id !== pid) return p;
+    const other = role === "editor" ? viewerCodeOf(p) : editorCodeOf(p);
+    let c = genCode(); while (c === other) c = genCode();
+    return { ...p, [role === "editor" ? "editorCode" : "viewerCode"]: c };
+  }));
+  // Backfill both invite codes on older projects that only have a single legacy code.
+  useEffect(() => {
+    if (!edit || !edit.pid) return;
+    const p = gd.projects.find(x => x.id === edit.pid);
+    if (p && (!p.viewerCode || !p.editorCode)) {
+      const viewerCode = p.viewerCode || p.code || genCode();
+      let editorCode = p.editorCode || genCode();
+      while (editorCode === viewerCode) editorCode = genCode();
+      patchProject(p.id, { viewerCode, editorCode });
+    }
+  }, [edit && edit.pid]);
   const completeProject = (pid, val) => patchProject(pid, { done: val });
   const softDelete = (pid) => patchProject(pid, { deleted: true, deletedAt: Date.now() });
   const restoreProject = (pid) => patchProject(pid, { deleted: false, deletedAt: null });
   const purgeProject = (pid) => setProjects(ps => ps.filter(p => p.id !== pid));
-  const tryJoin = () => { const c = joinCode.trim().toUpperCase(); const hit = gd.projects.find(p => (p.code||"").toUpperCase() === c); if (!c) return; if (hit) { setJoinErr(""); setJoinCode(""); setJoined(hit.name); setTimeout(() => setJoined(null), 2600); bumpOpen(hit.id); setOpenId(hit.id); setWhoFilter("all"); } else { setJoinErr("No project with that code (demo)."); } };
+  const tryJoin = () => { const c = joinCode.trim().toUpperCase(); if (!c) return; let role = null; const hit = gd.projects.find(p => { if (editorCodeOf(p).toUpperCase() === c) { role = "editor"; return true; } if (viewerCodeOf(p).toUpperCase() === c) { role = "viewer"; return true; } return false; }); if (hit) { setJoinErr(""); setJoinCode(""); setJoined({ name: hit.name, role }); setTimeout(() => setJoined(null), 2600); bumpOpen(hit.id); setOpenId(hit.id); setWhoFilter("all"); } else { setJoinErr("No project with that code (demo)."); } };
   const [hoverGid, setHoverGid] = useState(null);
   const [hoverPos, setHoverPos] = useState({ x: 0, y: 0 });
   const [dragTip, setDragTip] = useState(null);
@@ -1008,7 +1029,7 @@ function GanttView({ ctx }) {
   const setProjects = (fn) => { setHistory(h => [...h.slice(-29), gdRef.current.projects]); setGd(g => ({ ...g, projects: fn(g.projects) })); };
   const patchProject = (pid, patch) => setProjects(ps => ps.map(p => p.id === pid ? { ...p, ...patch } : p));
   const patchGroup = (pid, gid, fn) => setProjects(ps => ps.map(p => p.id !== pid ? p : { ...p, groups: p.groups.map(gr => gr.id === gid ? fn(gr) : gr) }));
-  const addProject = () => { const id = uid(); setProjects(ps => [...ps, { id, name: "New project", color: PALETTE[ps.length % PALETTE.length], due: addDays(todayISO(), 30), start: todayISO(), myRole: "owner", code: genCode(), codeCadence: "month", cascade: false, groups: [] }]); setOpenId(id); setEdit({ pid: id }); };
+  const addProject = () => { const id = uid(); setProjects(ps => [...ps, { id, name: "New project", color: PALETTE[ps.length % PALETTE.length], due: addDays(todayISO(), 30), start: todayISO(), myRole: "owner", ...genCodes(), codeCadence: "month", cascade: false, groups: [] }]); setOpenId(id); setEdit({ pid: id }); };
   const delProject = (pid) => { setProjects(ps => ps.filter(p => p.id !== pid)); setEdit(null); setOpenId(null); };
   const addGroup = (pid) => { const id = uid(); const p = gdRef.current.projects.find(x => x.id === pid); const used = new Set((p ? p.groups : []).map(g => g.color)); const color = PALETTE.find(c => !used.has(c)) || PALETTE[(p ? p.groups.length : 0) % PALETTE.length]; setProjects(ps => ps.map(x => x.id !== pid ? x : { ...x, groups: [...x.groups, { id, name: "New group", color, desc: "", start: todayISO(), end: addDays(todayISO(), 5), members: [] }] })); setEdit({ pid, gid: id }); };
   const delGroup = (pid, gid) => { const p = gdRef.current.projects.find(x => x.id === pid); let next = { pid }; if (p) { const idx = p.groups.findIndex(g => g.id === gid); const remaining = p.groups.filter(g => g.id !== gid); if (remaining.length) next = { pid, gid: remaining[Math.max(0, idx - 1)].id }; } setProjects(ps => ps.map(x => x.id !== pid ? x : { ...x, groups: x.groups.filter(g => g.id !== gid) })); setEdit(next); };
@@ -1058,7 +1079,7 @@ function GanttView({ ctx }) {
           </div>
         </div>
         {joined && <Confetti />}
-        {joined && <div className="toast">🎉 Successfully joined "{joined}"</div>}
+        {joined && <div className="toast">🎉 Successfully joined "{joined.name}" as {joined.role}</div>}
         {gd.projects.filter(p => !p.deleted).length > 0 && (
           <div style={{ position: "relative", maxWidth: 320, marginBottom: 14 }}>
             <Search size={15} style={{ position: "absolute", left: 11, top: 10, color: "var(--dim)" }} />
@@ -1402,7 +1423,7 @@ ${rows}</div></div>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              {canOpen && proj.codeCadence !== "off" && <span style={{ fontSize: 11.5, fontWeight: 700, color: "var(--teal)", background: "rgba(79,168,232,.14)", border: "1px solid #4FA8E855", borderRadius: 8, padding: "4px 9px", letterSpacing: "1px" }} title="Invite code (demo)">#{proj.code}</span>}
+              {canOpen && proj.codeCadence !== "off" && <span style={{ fontSize: 11.5, fontWeight: 700, color: "var(--teal)", background: "rgba(79,168,232,.14)", border: "1px solid #4FA8E855", borderRadius: 8, padding: "4px 9px", letterSpacing: "1px" }} title="Viewer invite code (demo)">#{viewerCodeOf(proj)}</span>}
               <span style={{ fontSize: 12, fontWeight: 700, color: ROLE_C[role], background: ROLE_C[role] + "22", border: `1px solid ${ROLE_C[role]}55`, borderRadius: 99, padding: "5px 12px", textTransform: "capitalize" }}>You're {role}</span>
               {/* demo presence: your avatar, hover for everyone */}
               <div className="pres dotwrap" style={{ position: "relative" }} onMouseEnter={() => setPresOpen(true)} onMouseLeave={() => setPresOpen(false)}>
@@ -1690,10 +1711,16 @@ ${rows}</div></div>
                   {editTarget.p.codeCadence === "off" ? (
                     <div style={{ fontSize: 12.5, color: "var(--muted)" }}>Joining is off — no one can join with a code.</div>
                   ) : (
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontFamily: "Fraunces", fontSize: 22, fontWeight: 600, letterSpacing: "2px", color: "var(--teal)" }}>{editTarget.p.code}</span>
-                      {isOwner && <button className="btn btn-ghost icon-btn" title="Regenerate" onClick={() => regenCode(editTarget.p.id)}><RefreshCw size={14} /></button>}
-                    </div>
+                    <>
+                      <select className="btn btn-sm" style={{ width: "100%", marginBottom: 8 }} value={codeRole} onChange={e => setCodeRole(e.target.value)}>
+                        <option value="viewer">Viewer code — join read-only</option>
+                        <option value="editor">Editor code — can edit</option>
+                      </select>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontFamily: "Fraunces", fontSize: 22, fontWeight: 600, letterSpacing: "2px", color: "var(--teal)" }}>{(codeRole === "editor" ? editorCodeOf(editTarget.p) : viewerCodeOf(editTarget.p)) || "—"}</span>
+                        {isOwner && <button className="btn btn-ghost icon-btn" title={`Regenerate ${codeRole} code`} onClick={() => regenCode(editTarget.p.id, codeRole)}><RefreshCw size={14} /></button>}
+                      </div>
+                    </>
                   )}
                   {isOwner && (
                     <div style={{ marginTop: 8 }}>
@@ -1703,7 +1730,7 @@ ${rows}</div></div>
                       </select>
                     </div>
                   )}
-                  <div style={{ fontSize: 10.5, color: "var(--dim)", marginTop: 7 }}>People who enter this code join as editors. (Real joining turns on with accounts.)</div>
+                  <div style={{ fontSize: 10.5, color: "var(--dim)", marginTop: 7 }}>The viewer code joins read-only; the editor code can make changes. (Real joining turns on with accounts.)</div>
                 </div>
                 <div className="foot-note" style={{ justifyContent: "flex-start", marginTop: 12 }}>Add or delete groups from the timeline (the <b style={{ color: "var(--ink)", margin: "0 3px" }}>+ Group</b> button). Delete the whole project from the project card.</div>
               </>
