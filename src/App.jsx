@@ -2701,9 +2701,6 @@ function TrackerView({ ctx }) {
                 {s.label}
               </button>
             )}
-            {activeSheet === s.id && sheets.length > 1 && (
-              <button onClick={() => deleteSheet(s.id)} title="Delete sheet" style={{ position: "absolute", right: 4, top: 6, background: "none", border: "none", cursor: "pointer", color: "var(--dim)", fontSize: 14, lineHeight: 1, padding: "0 2px" }}>×</button>
-            )}
           </div>
         ))}
         <button onClick={addSheet} title="Add sheet" style={{ fontFamily: "Outfit", fontSize: 15, fontWeight: 700, border: "none", borderRadius: "8px 8px 0 0", padding: "10px 16px", cursor: "pointer", background: "transparent", color: "var(--muted)", marginBottom: -2, transition: ".12s" }}>+ New Sheet</button>
