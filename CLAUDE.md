@@ -28,16 +28,24 @@ It is a single-page app built with React + Vite, deployed on Vercel, with a Neon
 ## File structure
 ```
 src/
-  App.jsx          — entire frontend (3000+ lines), all views in one file
-  MailView.jsx     — Outlook Mail tab (Microsoft Graph API)
-  main.jsx         — React entry point
+  App.jsx          — slim shell: state + ctx, nav, view switch, global modals (~250 lines)
+  styles.js        — the app-wide CSS template string
+  helpers.jsx      — shared helpers/constants + tiny components (UserAv, Confetti, …)
+  storage.js       — every localStorage key + load/save function
+  notifs.js        — buildNotifs (Inbox list + nav unread badge)
+  views/
+    HomeView.jsx · TrackerView.jsx · GanttView.jsx · InboxView.jsx · CalendarView.jsx · TeamView.jsx
+  components/
+    modals.jsx     — TaskModal, PersonModal, ProjectModal, ProfileModal, TeamEmailModal, EmailComposerModal
+    LoginScreen.jsx
   seedData.js      — default project/gantt seed data
   trackerData.js   — SEED_TRACKER rows + EMAIL_DIR (team name→email map)
-  sheetsData.js    — SEED_SHEETS: per-sheet seed data (COM-1 reuses SEED_TRACKER)
-  trackerApi.js    — fetch helpers for /api/tracker (apiLoad, apiSave)
+  sheetsData.js    — SEED_SHEETS per-sheet seed (COM-1/Culvers/Costco/ALDI)
+  trackerApi.js / ganttApi.js — fetch helpers for /api/tracker and /api/gantt
 api/
   tracker.js       — Vercel serverless: GET/POST tracker doc to Neon DB
-  projects.js      — Vercel serverless: returns project list + team emails
+  gantt.js         — Vercel serverless: shared Gantt projects (join-by-code)
+  projects.js      — Vercel serverless: project list + team emails (email relay)
 ```
 
 ---
@@ -125,4 +133,4 @@ In `src/trackerData.js`, add to `EMAIL_DIR`: `"first last": "first.last@rtmec.co
 - All colors use CSS variables (`var(--ink)`, `var(--panel)`, etc.) EXCEPT inside portals
 - Portal dropdowns need hardcoded hex colors — check theme state and pick the correct set
 - Don't use TypeScript, don't add external libraries without asking
-- Keep everything in `App.jsx` unless it's a large standalone view (like `MailView.jsx`)
+- Each view lives in `src/views/`; shared helpers in `helpers.jsx`/`storage.js`; App.jsx stays a thin shell
