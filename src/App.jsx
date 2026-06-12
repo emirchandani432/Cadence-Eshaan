@@ -1981,6 +1981,7 @@ function TeamView({ ctx }) {
   const [gq, setGq] = useState("");
   const [pq, setPq] = useState("");
   const [openPerson, setOpenPerson] = useState(null);
+  const [peopleOpen, setPeopleOpen] = useState(false);
   const gComplete = (g) => g.members.length > 0 && g.members.every(m => m.done);
 
   // build contact book from everyone who's been on a project with you
@@ -2051,12 +2052,16 @@ function TeamView({ ctx }) {
         </>
       )}
 
-      <div className="sec-h"><Users size={18} />People</div>
-      <div style={{ position: "relative", maxWidth: 280, marginBottom: 10 }}>
-        <Search size={14} style={{ position: "absolute", left: 10, top: 9, color: "var(--dim)" }} />
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search people…" style={{ width: "100%", paddingLeft: 30, fontFamily: "Outfit", fontSize: 13, color: "var(--ink)", border: "1px solid var(--line2)", borderRadius: 9, padding: "7px 10px 7px 30px", background: "var(--panel)", outline: "none" }} />
+      <div className="sec-h" style={{ cursor: "pointer", userSelect: "none" }} onClick={() => { setPeopleOpen(v => !v); setQ(""); }}>
+        <Users size={18} />All People<span style={{ marginLeft: "auto", fontSize: 12, color: "var(--dim)", fontWeight: 500 }}>{peopleOpen ? "▲" : "▼"}</span>
       </div>
-      {people.length === 0 ? <div className="empty-sm">No one yet — once people are added to your projects' groups, they'll show up here.</div> :
+      {peopleOpen && (
+        <div style={{ position: "relative", maxWidth: 280, marginBottom: 10 }}>
+          <Search size={14} style={{ position: "absolute", left: 10, top: 9, color: "var(--dim)" }} />
+          <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Search people…" style={{ width: "100%", fontFamily: "Outfit", fontSize: 13, color: "var(--ink)", border: "1px solid var(--line2)", borderRadius: 9, padding: "7px 10px 7px 30px", background: "var(--panel)", outline: "none" }} />
+        </div>
+      )}
+      {peopleOpen && (people.length === 0 ? <div className="empty-sm">No one yet — once people are added to your projects' groups, they'll show up here.</div> :
         shown.length === 0 ? <div className="empty-sm">No one matches "{q}".</div> :
         <div className="team-grid">
           {shown.map(p => (
@@ -2071,7 +2076,7 @@ function TeamView({ ctx }) {
               <button className="btn btn-ghost icon-btn" title="Email" onClick={(e) => { e.stopPropagation(); openComposer([p.id]); }}><Mail size={15} /></button>
             </div>
           ))}
-        </div>}
+        </div>)}
 
       <div className="sec-h"><FolderOpen size={18} />Projects</div>
       <div className="panel">
