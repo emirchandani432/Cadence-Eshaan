@@ -2631,7 +2631,7 @@ function TrackerView({ ctx }) {
         <div><div className="h-title">Tracker</div><div className="h-sub">Your COM project tracker — every project and assignment, like the sheet.</div></div>
       </div>
       {/* Sheet tabs */}
-      <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 0, flexWrap: "wrap", borderBottom: "2px solid var(--line)", paddingBottom: 0, justifyContent: "flex-start" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 0, flexWrap: "wrap", borderBottom: "2px solid var(--line)", paddingBottom: 0, justifyContent: "flex-start", width: "96vw", maxWidth: "96vw", marginLeft: "calc(-48vw + 50%)" }}>
         {sheets.map(s => (
           <div key={s.id} style={{ position: "relative", display: "flex", alignItems: "center" }}>
             {renamingSheet === s.id ? (
