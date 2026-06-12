@@ -6,7 +6,7 @@ import {
   CheckCircle2, Circle, Clock, FolderOpen, AlertCircle, LogOut, Send, ShieldCheck,
   LayoutDashboard, GanttChartSquare, ChevronDown, ChevronUp, Settings, TrendingUp, Flame, Sun, Moon, Monitor, RefreshCw, Minus, RotateCcw, Bell, MessageSquare, Table
 } from "lucide-react";
-import { SEED_DATA, SEED_GANTT } from "./seedData.js";
+import { SEED_DATA } from "./seedData.js";
 import { SEED_TRACKER, EMAIL_DIR } from "./trackerData.js";
 import { SEED_SHEETS } from "./sheetsData.js";
 import { apiLoad, apiSave } from "./trackerApi.js";
@@ -1710,64 +1710,6 @@ function NotificationsView({ ctx }) {
   );
 }
 
-function BoardView({ ctx }) {
-  const { data, filtered, personById, projectById, q, setQ, fPerson, setFPerson, fProject, setFProject,
-    newTask, cycleStatus, setTaskModal, delTask, emailTask, setView } = ctx;
-  const doneCount = filtered.filter(t => t.status === "done").length;
-  const pct = filtered.length ? Math.round(doneCount / filtered.length * 100) : 0;
-
-  if (data.people.length === 0 && data.tasks.length === 0) {
-    return (
-      <div className="panel" style={{ textAlign: "center", padding: "54px 24px" }}>
-        <div className="h-title" style={{ fontSize: 22 }}>Your board is empty</div>
-        <p style={{ color: "var(--muted)", fontSize: 14, margin: "8px 0 18px" }}>Add people in the Team tab, then start adding tasks.</p>
-        <button className="btn btn-pri" onClick={() => setView("team")}><Plus size={16} />Set up the team</button>
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <div className="head">
-        <div><div className="h-title">Board</div><div className="h-sub">{pct}% complete · {filtered.length} tasks shown</div></div>
-        <button className="btn btn-pri" onClick={() => newTask()}><Plus size={16} />New task</button>
-      </div>
-
-      <div className="cad-tools" style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 11, padding: "8px 12px", flex: 1, minWidth: 200 }}>
-          <Search size={16} color="var(--muted)" />
-          <input placeholder="Search tasks…" value={q} onChange={e => setQ(e.target.value)} style={{ border: "none", outline: "none", background: "transparent", fontFamily: "Outfit", fontSize: 14, width: "100%", color: "var(--ink)" }} />
-        </div>
-        <select className="btn" value={fPerson} onChange={e => setFPerson(e.target.value)}>
-          <option value="all">Everyone</option>
-          {data.people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-        <select className="btn" value={fProject} onChange={e => setFProject(e.target.value)}>
-          <option value="all">All projects</option>
-          {data.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-      </div>
-
-      <div className="cols">
-        {COLUMNS.map(col => {
-          const items = filtered.filter(t => t.status === col.id);
-          return (
-            <div className="col" key={col.id}>
-              <div className="col-h"><span className="dot" style={{ background: col.dot }} />{col.label}<span className="ct">{items.length}</span></div>
-              {items.map((t, i) => (
-                <TaskCard key={t.id} t={t} i={i} person={personById(t.assigneeId)} project={projectById(t.projectId)}
-                  onTick={() => cycleStatus(t)} onEdit={() => setTaskModal(t)} onDel={() => delTask(t.id)} onEmail={() => emailTask(t)} />
-              ))}
-              {items.length === 0 && <div style={{ fontSize: 12.5, color: "var(--dim)", textAlign: "center", padding: "14px 0" }}>—</div>}
-            </div>
-          );
-        })}
-      </div>
-    </>
-  );
-}
-
-/* ---------------- Team ---------------- */
 function DisciplineField({ value, onChange, placeholder }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
