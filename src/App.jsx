@@ -2310,8 +2310,18 @@ function loadCalNotes() { try { const v = localStorage.getItem(CALKEY); if (v) r
 function saveCalNotes(n) { try { localStorage.setItem(CALKEY, JSON.stringify(n)); } catch (e) {} }
 /* ---------------- Tracker (Excel-style sheet) ---------------- */
 const TRACKER_KEY = "cadence:tracker:v2";
-function loadTracker() { try { const v = localStorage.getItem(TRACKER_KEY); if (v) { const p = JSON.parse(v); return Array.isArray(p) ? { rows: p } : p; } } catch (e) {} return null; }
-function saveTracker(d) { try { localStorage.setItem(TRACKER_KEY, JSON.stringify(d)); } catch (e) {} }
+const SHEETS_KEY = "cadence:tracker:sheets:v1";
+const DEFAULT_SHEETS = [
+  { id: "main", label: "All Projects" },
+  { id: "culvers", label: "Culvers" },
+  { id: "aldi", label: "Aldi" },
+  { id: "costco", label: "Costco" },
+];
+function loadSheets() { try { const v = localStorage.getItem(SHEETS_KEY); if (v) return JSON.parse(v); } catch (e) {} return DEFAULT_SHEETS; }
+function saveSheets(s) { try { localStorage.setItem(SHEETS_KEY, JSON.stringify(s)); } catch (e) {} }
+function sheetKey(id) { return id === "main" ? TRACKER_KEY : `cadence:tracker:sheet:${id}`; }
+function loadTracker(id = "main") { try { const v = localStorage.getItem(sheetKey(id)); if (v) { const p = JSON.parse(v); return Array.isArray(p) ? { rows: p } : p; } } catch (e) {} return null; }
+function saveTracker(d, id = "main") { try { localStorage.setItem(sheetKey(id), JSON.stringify(d)); } catch (e) {} }
 const TRACKER_BLOCK = new Set(["SEATTLE", "DALLAS", "IOWA", "OTHERS", "COM-1"]);
 const trackerEmailFor = (name) => {
   const parts = String(name || "").trim().split(/\s+/).map(p => p.replace(/[^A-Za-z]/g, "")).filter(Boolean);
@@ -2448,13 +2458,58 @@ const TRACKER_COLS = [
 ];
 function TrackerView({ ctx }) {
   const { effLight, theme } = ctx;
+  const [sheets, setSheets] = useState(() => loadSheets());
+  const [activeSheet, setActiveSheet] = useState("main");
+  const [renamingSheet, setRenamingSheet] = useState(null);
+
+  const switchSheet = (id) => {
+    // save current sheet before switching
+    setActiveSheet(id);
+  };
+
+  const addSheet = () => {
+    const label = window.prompt("Sheet name:");
+    if (!label || !label.trim()) return;
+    const id = "sheet_" + uid();
+    const next = [...sheets, { id, label: label.trim() }];
+    setSheets(next);
+    saveSheets(next);
+    setActiveSheet(id);
+  };
+
+  const deleteSheet = (id) => {
+    if (sheets.length <= 1) { alert("Can't delete the last sheet."); return; }
+    if (!window.confirm(`Delete sheet "${sheets.find(s => s.id === id)?.label}"?`)) return;
+    try { localStorage.removeItem(sheetKey(id)); } catch (e) {}
+    const next = sheets.filter(s => s.id !== id);
+    setSheets(next);
+    saveSheets(next);
+    if (activeSheet === id) setActiveSheet(next[0].id);
+  };
+
+  const renameSheet = (id, label) => {
+    const next = sheets.map(s => s.id === id ? { ...s, label } : s);
+    setSheets(next);
+    saveSheets(next);
+    setRenamingSheet(null);
+  };
+
   const [data, setData] = useState(() => {
-    const s = loadTracker();
-    const rs = (s && s.rows) || SEED_TRACKER;
+    const s = loadTracker(activeSheet);
+    const rs = (s && s.rows) || (activeSheet === "main" ? SEED_TRACKER : []);
     return rs.map((r, i) => r._id ? r : { ...r, _id: "r" + (r.rowNumber || i) });
   });
-  const [cols, setCols] = useState(() => { const s = loadTracker(); return ((s && s.cols) || TRACKER_COLS).filter(c => c.key !== "rowNumber"); });
-  const [statuses, setStatuses] = useState(() => { const s = loadTracker(); if (s && s.statuses) return s.statuses; const rs = (s && s.rows) || SEED_TRACKER; return Array.from(new Set(rs.map(r => r.stage).filter(Boolean))); });
+  const [cols, setCols] = useState(() => { const s = loadTracker(activeSheet); return ((s && s.cols) || TRACKER_COLS).filter(c => c.key !== "rowNumber"); });
+  const [statuses, setStatuses] = useState(() => { const s = loadTracker(activeSheet); if (s && s.statuses) return s.statuses; const rs = (s && s.rows) || SEED_TRACKER; return Array.from(new Set(rs.map(r => r.stage).filter(Boolean))); });
+
+  // Reload data when sheet changes
+  useEffect(() => {
+    const s = loadTracker(activeSheet);
+    const rs = (s && s.rows) || (activeSheet === "main" ? SEED_TRACKER : []);
+    setData(rs.map((r, i) => r._id ? r : { ...r, _id: "r" + (r.rowNumber || i) }));
+    setCols((s && s.cols) ? s.cols.filter(c => c.key !== "rowNumber") : TRACKER_COLS.filter(c => c.key !== "rowNumber"));
+    setStatuses(s && s.statuses ? s.statuses : Array.from(new Set(rs.map(r => r.stage).filter(Boolean))));
+  }, [activeSheet]);
   const apiOk = useRef(false);
   const curV = useRef(0);
   const lastSave = useRef(0);
@@ -2496,7 +2551,7 @@ function TrackerView({ ctx }) {
   }, []);
   // Persist: local cache always; push to the DB (debounced) unless we just applied a remote change.
   useEffect(() => {
-    saveTracker({ cols, rows: data, statuses });
+    saveTracker({ cols, rows: data, statuses }, activeSheet);
     if (applyingRemote.current) { applyingRemote.current = false; return; }
     if (!apiOk.current) return;
     const t = setTimeout(async () => {
@@ -2564,7 +2619,30 @@ function TrackerView({ ctx }) {
       <div className="head">
         <div><div className="h-title">Tracker</div><div className="h-sub">Your COM project tracker — every project and assignment, like the sheet.</div></div>
       </div>
-      <div className="panel" style={{ padding: 12, width: "96vw", maxWidth: "96vw", marginLeft: "calc(-48vw + 50%)" }}>
+      {/* Sheet tabs */}
+      <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 0, flexWrap: "wrap", borderBottom: "2px solid var(--line)", paddingBottom: 0 }}>
+        {sheets.map(s => (
+          <div key={s.id} style={{ position: "relative", display: "flex", alignItems: "center" }}>
+            {renamingSheet === s.id ? (
+              <input autoFocus defaultValue={s.label}
+                onBlur={e => renameSheet(s.id, e.target.value.trim() || s.label)}
+                onKeyDown={e => { if (e.key === "Enter") renameSheet(s.id, e.target.value.trim() || s.label); if (e.key === "Escape") setRenamingSheet(null); }}
+                style={{ fontFamily: "Outfit", fontSize: 13, fontWeight: 600, border: "1px solid var(--teal)", borderRadius: "8px 8px 0 0", padding: "7px 10px", background: "var(--panel2)", color: "var(--ink)", outline: "none", width: 120 }} />
+            ) : (
+              <button onDoubleClick={() => setRenamingSheet(s.id)} onClick={() => switchSheet(s.id)}
+                style={{ fontFamily: "Outfit", fontSize: 13, fontWeight: 600, border: "none", borderRadius: "8px 8px 0 0", padding: "8px 14px", cursor: "pointer", background: activeSheet === s.id ? "var(--panel)" : "var(--panel2)", color: activeSheet === s.id ? "var(--ink)" : "var(--muted)", borderBottom: activeSheet === s.id ? "2px solid var(--primary)" : "2px solid transparent", marginBottom: -2, transition: ".12s" }}>
+                {s.label}
+              </button>
+            )}
+            {activeSheet === s.id && sheets.length > 1 && (
+              <button onClick={() => deleteSheet(s.id)} title="Delete sheet" style={{ position: "absolute", right: 2, top: 4, background: "none", border: "none", cursor: "pointer", color: "var(--dim)", fontSize: 13, lineHeight: 1, padding: "0 2px" }}>×</button>
+            )}
+          </div>
+        ))}
+        <button onClick={addSheet} title="Add sheet" style={{ fontFamily: "Outfit", fontSize: 13, fontWeight: 700, border: "none", borderRadius: "8px 8px 0 0", padding: "8px 12px", cursor: "pointer", background: "transparent", color: "var(--muted)", marginBottom: -2, transition: ".12s" }}>+ New Sheet</button>
+      </div>
+
+      <div className="panel" style={{ padding: 12, width: "96vw", maxWidth: "96vw", marginLeft: "calc(-48vw + 50%)", borderTopLeftRadius: 0 }}>
         <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
           <div style={{ position: "relative", flex: 1, minWidth: 220 }}>
             <Search size={15} style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: "var(--muted)" }} />
